@@ -6,7 +6,6 @@ import ai.djl.ndarray.NDArray;
 import ai.djl.ndarray.NDManager;
 import ai.djl.ndarray.types.Shape;
 import ai.djl.nn.Parameter;
-import ai.djl.repository.Repository;
 import ai.djl.timeseries.TimeSeriesData;
 import ai.djl.timeseries.dataset.FieldName;
 import ai.djl.timeseries.distribution.DistributionLoss;
@@ -37,7 +36,6 @@ import java.io.InputStreamReader;
 import java.io.Reader;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Paths;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -47,23 +45,17 @@ import java.util.Properties;
  *
  * @author ambag
  */
-public class DjlGriddb {
+public class MonthlyProductionForecast {
 
     final static String FREQ = "M";
     final static int PREDICTION_LENGTH = 12;
-    //final static double RMSSE = 1.00;
 
     public static void main(String[] args) throws Exception {
         System.out.println("Starting...");
-        Properties props = new Properties();
-        props.setProperty("notificationMember", "127.0.0.1:10001");
-        props.setProperty("clusterName", "defaultCluster");
-        props.setProperty("user", "admin");
-        props.setProperty("password", "admin");
+
         GridStore store = null;
         try {
-            store = GridStoreFactory.getInstance().getGridStore(props);
-            System.out.println("Connected to GridDB...");
+            store = connectToGridDB();
             seedDatabase(store);
             startTraining(store);
             predict();
@@ -82,29 +74,33 @@ public class DjlGriddb {
         return null;
     }
 
-    private static void startTraining(GridStore store) throws IOException, TranslateException {
+    private static GridStore connectToGridDB() throws GSException {
+        Properties props = new Properties();
+        props.setProperty("notificationMember", "127.0.0.1:10001");
+        props.setProperty("clusterName", "defaultCluster");
+        props.setProperty("user", "admin");
+        props.setProperty("password", "admin");
+        return GridStoreFactory.getInstance().getGridStore(props);
+    }
 
-        Repository repository = Repository.newInstance("local_dataset",
-                Paths.get("YOUR_PATH/m5-forecasting-accuracy"));
-        NDManager manager = NDManager.newBaseManager();
+    private static void startTraining(GridStore store) throws IOException, TranslateException {
 
         DistributionOutput distributionOutput = new NegativeBinomialOutput();
 
         Model model = null;
         Trainer trainer = null;
-        try {            
+        NDManager manager = null;
+        try {
+            manager = NDManager.newBaseManager();
             model = Model.newInstance("deepar");
             DeepARNetwork trainingNetwork = getDeepARModel(distributionOutput, true);
             model.setBlock(trainingNetwork);
 
             List<TimeSeriesTransform> trainingTransformation = trainingNetwork.createTrainingTransformation(manager);
-            int contextLength = trainingNetwork.getContextLength();
 
-            List<TimeSeriesData> data = getTrainingData(store);
-            
-            
-            Dataset trainSet = getDataset(data);            
-             
+            List<TimeSeriesData> data = loadMonthlyProductionData(store, trainingTransformation, manager);
+            Dataset trainSet = getDataset(data);
+
             trainer = model.newTrainer(setupTrainingConfig(distributionOutput));
             trainer.setMetrics(new Metrics());
 
@@ -133,8 +129,10 @@ public class DjlGriddb {
             if (model != null) {
                 model.close();
             }
+            if (manager != null) {
+                manager.close();
+            }
         }
-
     }
 
     private static DeepARNetwork getDeepARModel(DistributionOutput distributionOutput, boolean training) {
@@ -153,7 +151,7 @@ public class DjlGriddb {
                 .optInitializer(new XavierInitializer(), Parameter.Type.WEIGHT);
     }
 
-    private static Dataset getDataset(
+    private static ArrayDataset getDataset(
             List<TimeSeriesData> data) throws IOException {
 
         NDArray[] inputList = new NDArray[data.size()];
@@ -165,7 +163,7 @@ public class DjlGriddb {
             inputList[i] = input;
             targetList[i] = target;
         }
-        
+
         // Create the ArrayDataset
         ArrayDataset dataset = new ArrayDataset.Builder()
                 .setData(inputList)
@@ -176,7 +174,8 @@ public class DjlGriddb {
 
     }
 
-    private static List<TimeSeriesData> getTrainingData(GridStore store) throws GSException {
+    private static List<TimeSeriesData> loadMonthlyProductionData(GridStore store,
+            List<TimeSeriesTransform> trainingTransformation, NDManager manager) throws GSException {
         TimeSeries<Entry> entries = store.getTimeSeries("ENTRIES", Entry.class);
         Query<Entry> query = entries.query("Select * from ENTRIES");
         RowSet<Entry> rowSet = query.getRowSet();
@@ -188,10 +187,17 @@ public class DjlGriddb {
             float value = ((Number) rowSet.next().value).floatValue();
             timeSeriesData.setStartTime(timestamp);
             timeSeriesData.add(FieldName.TARGET, NDManager.newBaseManager().create(value));
-            timeSeriesDataList.add(timeSeriesData);
+            timeSeriesDataList.add(applyTransformations(trainingTransformation, timeSeriesData, manager));
         }
 
         return timeSeriesDataList;
+    }
+
+    private static TimeSeriesData applyTransformations(List<TimeSeriesTransform> transformations, TimeSeriesData dataPoint, NDManager manager) {
+        for (TimeSeriesTransform transform : transformations) {
+            dataPoint = transform.transform(manager, dataPoint, true);
+        }
+        return dataPoint;
     }
 
     private static Entry[] getTimeSeriesData(URL url) throws Exception {
@@ -215,7 +221,7 @@ public class DjlGriddb {
     }
 
     private static void seedDatabase(GridStore store) throws Exception {
-        Entry[] entries = getTimeSeriesData(DjlGriddb.class.getClassLoader().getResource("data/csvjson.json"));
+        Entry[] entries = getTimeSeriesData(MonthlyProductionForecast.class.getClassLoader().getResource("data/csvjson.json"));
         TimeSeries<Entry> timeSeries = store.putTimeSeries("ENTRIES", Entry.class);
         for (Entry entry : entries) {
             System.out.println(String.format("%s , %s", entry.createdAt, entry.value));
