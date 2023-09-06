@@ -11,20 +11,11 @@ import java.util.Date;
  *
  * @author ambag
  */
-public class DB {
-
-    static class Person {
-
+public class DB {    
+    
+     public static class Entry {
         @RowKey
-        String name;
-        int age;
-    }
-
-    static class HeartRate {
-
-        @RowKey
-        Date ts;
-        int heartRate;
-        String activity;
+        public Date createdAt;
+        public double value;
     }
 }
