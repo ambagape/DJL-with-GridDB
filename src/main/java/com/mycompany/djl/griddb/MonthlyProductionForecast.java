@@ -229,7 +229,7 @@ public class MonthlyProductionForecast {
             List<TimeSeriesTransform> transformation) throws IOException {
 
         GridDBDataset.GridDBBuilder builder
-                = GridDBDataset.builder()
+                = GridDBDataset.gridDBBuilder()
                         .optUsage(usage)
                         .setTransformation(transformation)
                         .setContextLength(contextLength)
@@ -370,7 +370,6 @@ public class MonthlyProductionForecast {
             }
         }
         return entries;
-
     }
 
     /*

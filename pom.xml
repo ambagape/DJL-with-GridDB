@@ -15,6 +15,10 @@
             <id>project-repo</id>
             <url>file://${basedir}/local-repo</url>
         </repository>
+         <repository>
+            <id>mvn-repo</id>
+            <url>https://mvnrepository.com/artifact</url>
+        </repository>
     </repositories>
     <dependencies>
         <dependency>
@@ -38,17 +42,7 @@
             <groupId>ai.djl</groupId>
             <artifactId>api</artifactId>
             <version>0.23.0</version>
-        </dependency>
-        <dependency>
-            <groupId>ai.djl.timeseries</groupId>
-            <artifactId>timeseries</artifactId>
-            <version>0.23.0</version>
-        </dependency>
-        <dependency>
-            <groupId>ai.djl</groupId>
-            <artifactId>timeseries</artifactId>
-            <version>0.23.0</version>
-        </dependency>
+        </dependency>        
         <dependency>
             <groupId>ai.djl</groupId>
             <artifactId>model-zoo</artifactId>

@@ -3,7 +3,6 @@ package com.mycompany.djl.griddb.datasets;
 import ai.djl.basicdataset.tabular.utils.Feature;
 import ai.djl.timeseries.dataset.FieldName;
 import ai.djl.timeseries.dataset.M5Forecast;
-import ai.djl.timeseries.transform.TimeSeriesTransform;
 import ai.djl.util.Progress;
 import com.mycompany.djl.griddb.db.DB;
 import com.toshiba.mwcloud.gs.GSException;
@@ -18,6 +17,7 @@ import java.io.IOException;
 import java.io.PrintWriter;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.Map;
 import java.util.Properties;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -32,11 +32,13 @@ public class GridDBDataset extends M5Forecast {
     private final File csvFile;
 
     protected GridDBDataset(GridDBBuilder builder) throws GSException, FileNotFoundException {
-        super(builder);
+        super(M5Forecast.builder()
+                .optUsage(builder.usage)
+                .optCsvFile(builder.csvFile.toPath()));                
         this.csvFile = builder.csvFile;
         this.dataLength = builder.dataLength;
     }
-
+    
     /**
      * {@inheritDoc}
      */
@@ -59,7 +61,7 @@ public class GridDBDataset extends M5Forecast {
         return GridStoreFactory.getInstance().getGridStore(props);
     }
 
-    public static GridDBBuilder builder() {
+    public static GridDBBuilder gridDBBuilder() {
         GridDBBuilder builder = null;
         try {
             builder = new GridDBBuilder();
@@ -69,11 +71,12 @@ public class GridDBDataset extends M5Forecast {
         return builder;
     }
 
-    public static class GridDBBuilder extends M5Forecast.Builder {
+    public static class GridDBBuilder extends CsvBuilder {
 
         GridStore store;
         public int dataLength = 0;
         File csvFile;
+        Usage usage;        
 
         GridDBBuilder() throws GSException {
             store = connectToGridDB();
@@ -95,19 +98,22 @@ public class GridDBDataset extends M5Forecast {
             super.addFieldFeature(name, feature);
             return this;
         }
-
+        
         @Override
-        public GridDBBuilder setTransformation(List<TimeSeriesTransform> transforms) {
+        public GridDBBuilder setTransformation(List transforms) {
             super.setTransformation(transforms);
             return this;
-        }
-
-        @Override
+        }      
+        
         public GridDBBuilder optUsage(Usage usage) {
-            super.optUsage(usage);
+            this.usage = usage;
             return this;
         }
-
+        
+        public void  addFeature(String name,  FieldName fieldName){
+            addFieldFeature(fieldName, new Feature(name, false));
+        }        
+         
         @Override
         public GridDBBuilder setSampling(int size, boolean isRandom) {
             super.setSampling(size, isRandom);
@@ -136,7 +142,6 @@ public class GridDBDataset extends M5Forecast {
                             .forEach(pw::println);
                 }
             }
-
             return csvOutputFile;
         }
 
@@ -155,6 +160,5 @@ public class GridDBDataset extends M5Forecast {
             }
             return gridDBDataset;
         }
-
     }
 }
