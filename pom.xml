@@ -15,7 +15,7 @@
             <id>project-repo</id>
             <url>file://${basedir}/local-repo</url>
         </repository>
-         <repository>
+        <repository>
             <id>mvn-repo</id>
             <url>https://mvnrepository.com/artifact</url>
         </repository>
@@ -82,6 +82,23 @@
             <artifactId>examples</artifactId>
             <version>0.6.0</version>
         </dependency>
-
+        <dependency>
+            <groupId>com.mysql</groupId>
+            <artifactId>mysql-connector-j</artifactId>
+            <version>8.1.0</version>
+        </dependency>
+        <dependency>
+            <groupId>ai.djl.mxnet</groupId>
+            <artifactId>mxnet-engine</artifactId>
+            <version>0.23.0</version>
+            <scope>runtime</scope>
+        </dependency>
+        <dependency>
+            <groupId>ai.djl.mxnet</groupId>
+            <artifactId>mxnet-native-mkl</artifactId>
+            <classifier>win-x86_64</classifier>
+            <scope>runtime</scope>
+            <version>1.9.1</version>
+        </dependency>
     </dependencies>
 </project>

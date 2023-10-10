@@ -39,6 +39,7 @@ import ai.djl.translate.TranslateException;
 import ai.djl.util.Progress;
 import com.google.gson.GsonBuilder;
 import com.mycompany.djl.griddb.datasets.GridDBDataset;
+import com.mycompany.djl.griddb.datasets.MySQLDataset;
 import com.mycompany.djl.griddb.db.DB.Entry;
 import com.toshiba.mwcloud.gs.GSException;
 import com.toshiba.mwcloud.gs.GridStore;
@@ -50,6 +51,8 @@ import java.io.Reader;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Paths;
+import java.sql.Connection;
+import java.sql.PreparedStatement;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -70,21 +73,11 @@ public class MonthlyProductionForecast {
 
     public static void main(String[] args) throws Exception {
         System.out.println("Starting...");
-
-        GridStore store = null;
-        try {
-            store = GridDBDataset.connectToGridDB();
-            seedDatabase();
-            startTraining();
-        } finally {
-            if (store != null) {
-                try {
-                    store.close();
-                } catch (GSException e) {
-                    System.out.println("An error occurred when releasing the recsource.");
-                }
-            }
-        }
+        //GridDBDataset.connectToGridDB();
+        //seedDatabase();
+        MySQLDataset.connectToMySQL();
+        seedMySQLDatabase();
+        startTraining();
     }
 
     public static Map<String, Float> predict(String outputDir)
@@ -383,6 +376,20 @@ public class MonthlyProductionForecast {
                 System.out.println(String.format("%s , %s", entry.createdAt, entry.value));
                 timeSeries.put(entry);
             }
+        }
+    }
+
+    private static void seedMySQLDatabase() throws Exception {
+        String insertQL = "INSERT INTO `entries` (createdAt, value) VALUES (?, ?)";
+        try ( Connection connection = MySQLDataset.connectToMySQL();  PreparedStatement preparedStatement = connection.prepareStatement(insertQL)) {
+            Entry[] entries = getTimeSeriesData(MonthlyProductionForecast.class.getClassLoader().getResource("data/csvjson.json"));
+            for (Entry entry : entries) {
+                System.out.println(String.format("%s , %s", entry.createdAt, entry.value));
+                preparedStatement.setDate(1, new java.sql.Date(entry.createdAt.getTime()));
+                preparedStatement.setDouble(2, entry.value);
+                preparedStatement.addBatch();
+            }
+            preparedStatement.executeBatch();
         }
     }
 }
