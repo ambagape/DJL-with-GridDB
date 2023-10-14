@@ -128,7 +128,7 @@ public class MySQLDataset extends M5Forecast {
             try ( Statement statement = con.createStatement();  ResultSet resultSet = statement.executeQuery(sql)) {
                 List<String> csv = new LinkedList<>();
                 while (resultSet.next()) {
-                    csv.add(String.format("%s, %f", resultSet.getDate("createdAt"), resultSet.getDate("value")));
+                    csv.add(String.format("%s, %f", resultSet.getTimestamp("createdAt"), resultSet.getDate("value")));
                 }
                 try ( PrintWriter pw = new PrintWriter(csvOutputFile)) {
                     csv.stream()
