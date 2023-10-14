@@ -41,7 +41,6 @@ import com.google.gson.GsonBuilder;
 import com.mycompany.djl.griddb.datasets.GridDBDataset;
 import com.mycompany.djl.griddb.datasets.MySQLDataset;
 import com.mycompany.djl.griddb.db.DB.Entry;
-import com.toshiba.mwcloud.gs.GSException;
 import com.toshiba.mwcloud.gs.GridStore;
 import com.toshiba.mwcloud.gs.TimeSeries;
 import java.io.IOException;
