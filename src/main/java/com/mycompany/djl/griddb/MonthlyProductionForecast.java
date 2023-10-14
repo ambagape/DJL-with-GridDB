@@ -80,14 +80,15 @@ public class MonthlyProductionForecast {
     }
 
     public static Map<String, Float> predict(String outputDir)
-            throws IOException, TranslateException, ModelException {
+            throws IOException, TranslateException, ModelException, Exception {
         try ( Model model = Model.newInstance("deepar")) {
             DeepARNetwork predictionNetwork = getDeepARModel(new NegativeBinomialOutput(), false);
             model.setBlock(predictionNetwork);
             model.load(Paths.get(MODEL_OUTPUT_DIR));
 
             Dataset testSet
-                    = getDataset(Dataset.Usage.TEST, predictionNetwork.getContextLength(), new ArrayList<>());
+                    //= getDataset(Dataset.Usage.TEST, predictionNetwork.getContextLength(), new ArrayList<>());
+                    = getMySQLDataset(Dataset.Usage.TEST, predictionNetwork.getContextLength(), new ArrayList<>());
 
             Map<String, Object> arguments = new ConcurrentHashMap<>();
             arguments.put("prediction_length", 1); // Univariate, so predict one value at a time
@@ -152,8 +153,8 @@ public class MonthlyProductionForecast {
 
             List<TimeSeriesTransform> trainingTransformation = trainingNetwork.createTrainingTransformation(manager);
 
-            Dataset trainSet = getDataset(Dataset.Usage.TRAIN, trainingNetwork.getContextLength(), trainingTransformation);
-
+            //Dataset trainSet = getDataset(Dataset.Usage.TRAIN, trainingNetwork.getContextLength(), trainingTransformation);
+            Dataset trainSet = getMySQLDataset(Dataset.Usage.TRAIN, trainingNetwork.getContextLength(), trainingTransformation);
             trainer = model.newTrainer(setupTrainingConfig(distributionOutput));
             trainer.setMetrics(new Metrics());
 
@@ -406,5 +407,32 @@ public class MonthlyProductionForecast {
             }
             preparedStatement.executeBatch();
         }
+    }
+    
+     private static Dataset getMySQLDataset(Dataset.Usage usage,
+            int contextLength,
+            List<TimeSeriesTransform> transformation) throws IOException, Exception {
+
+        MySQLDataset.MySQLBBuilder builder
+                = MySQLDataset.gridDBBuilder()
+                        .optUsage(usage)
+                        .setTransformation(transformation)
+                        .setContextLength(contextLength)
+                        .initData()
+                        .setSampling(12, usage == Dataset.Usage.TRAIN);
+
+        int maxWeek = usage == Dataset.Usage.TRAIN ? builder.dataLength - 12 : builder.dataLength;
+        for (int i = 1; i <= maxWeek; i++) {
+            builder.addFeature("w_" + i, FieldName.TARGET);
+        }
+
+        MySQLDataset dataset
+                = builder.addFieldFeature(FieldName.START,
+                        new Feature(
+                                "date",
+                                TimeFeaturizers.getConstantTimeFeaturizer(START_TIME)))
+                        .build();
+        dataset.prepare(new ProgressBar());
+        return dataset;
     }
 }
