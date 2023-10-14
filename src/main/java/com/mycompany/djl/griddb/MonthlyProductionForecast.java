@@ -66,7 +66,7 @@ import java.util.concurrent.ConcurrentHashMap;
 public class MonthlyProductionForecast {
 
     final static String FREQ = "W";
-    final static int PREDICTION_LENGTH = 1;
+    final static int PREDICTION_LENGTH = 4;
     final static LocalDateTime START_TIME = LocalDateTime.parse("1985-01-01T00:00");
     final static String MODEL_OUTPUT_DIR = "outputs";
 
@@ -159,18 +159,25 @@ public class MonthlyProductionForecast {
 
             int historyLength = trainingNetwork.getHistoryLength();
             Shape[] inputShapes = new Shape[9];
-            // (N, num_cardinality)
-            inputShapes[0] = new Shape(1, 1);
-            // (N, num_real) if use_feat_stat_real else (N, 1)
+            inputShapes[0] = new Shape(1, 5);
             inputShapes[1] = new Shape(1, 1);
-            // (N, history_length, num_time_feat + num_age_feat)
-            inputShapes[2] = new Shape(1, historyLength, TimeFeature.timeFeaturesFromFreqStr(FREQ).size() + 1);
-            inputShapes[3] = new Shape(1, historyLength);
-            inputShapes[4] = new Shape(1, historyLength);
-            inputShapes[5] = new Shape(1, historyLength);
-            inputShapes[6] = new Shape(1, 1, TimeFeature.timeFeaturesFromFreqStr(FREQ).size() + 1);
-            inputShapes[7] = new Shape(1, 1);
-            inputShapes[8] = new Shape(1, 1);
+            
+            inputShapes[2] =
+                        new Shape(
+                                1,
+                                historyLength,
+                                TimeFeature.timeFeaturesFromFreqStr(FREQ).size() + 1);
+                inputShapes[3] = new Shape(1, historyLength);
+                inputShapes[4] = new Shape(1, historyLength);
+                inputShapes[5] = new Shape(1, historyLength);
+                
+                inputShapes[6] =
+                        new Shape(
+                                1,
+                                PREDICTION_LENGTH,
+                                TimeFeature.timeFeaturesFromFreqStr(FREQ).size() + 1);
+                inputShapes[7] = new Shape(1, PREDICTION_LENGTH);
+                inputShapes[8] = new Shape(1, PREDICTION_LENGTH);
             trainer.initialize(inputShapes);
             int epoch = 10;
             EasyTrain.fit(trainer, epoch, trainSet, null);
@@ -189,11 +196,20 @@ public class MonthlyProductionForecast {
 
     private static DeepARNetwork getDeepARModel(DistributionOutput distributionOutput, boolean training) {
 
+        List<Integer> cardinality = new ArrayList<>();
+        cardinality.add(3);
+        cardinality.add(10);
+        cardinality.add(3);
+        cardinality.add(7);
+        cardinality.add(3049);
+
         DeepARNetwork.Builder builder = DeepARNetwork.builder()
+                .setCardinality(cardinality)
                 .setFreq(FREQ)
                 .setPredictionLength(PREDICTION_LENGTH)
                 .optDistrOutput(distributionOutput)
                 .optUseFeatStaticCat(false);
+
         return training ? builder.buildTrainingNetwork() : builder.buildPredictionNetwork();
     }
 
