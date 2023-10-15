@@ -162,23 +162,23 @@ public class MonthlyProductionForecast {
             Shape[] inputShapes = new Shape[9];
             inputShapes[0] = new Shape(1, 5);
             inputShapes[1] = new Shape(1, 1);
-            
-            inputShapes[2] =
-                        new Shape(
-                                1,
-                                historyLength,
-                                TimeFeature.timeFeaturesFromFreqStr(FREQ).size() + 1);
-                inputShapes[3] = new Shape(1, historyLength);
-                inputShapes[4] = new Shape(1, historyLength);
-                inputShapes[5] = new Shape(1, historyLength);
-                
-                inputShapes[6] =
-                        new Shape(
-                                1,
-                                PREDICTION_LENGTH,
-                                TimeFeature.timeFeaturesFromFreqStr(FREQ).size() + 1);
-                inputShapes[7] = new Shape(1, PREDICTION_LENGTH);
-                inputShapes[8] = new Shape(1, PREDICTION_LENGTH);
+
+            inputShapes[2]
+                    = new Shape(
+                            1,
+                            historyLength,
+                            TimeFeature.timeFeaturesFromFreqStr(FREQ).size() + 1);
+            inputShapes[3] = new Shape(1, historyLength);
+            inputShapes[4] = new Shape(1, historyLength);
+            inputShapes[5] = new Shape(1, historyLength);
+
+            inputShapes[6]
+                    = new Shape(
+                            1,
+                            PREDICTION_LENGTH,
+                            TimeFeature.timeFeaturesFromFreqStr(FREQ).size() + 1);
+            inputShapes[7] = new Shape(1, PREDICTION_LENGTH);
+            inputShapes[8] = new Shape(1, PREDICTION_LENGTH);
             trainer.initialize(inputShapes);
             int epoch = 10;
             EasyTrain.fit(trainer, epoch, trainSet, null);
@@ -408,18 +408,19 @@ public class MonthlyProductionForecast {
             preparedStatement.executeBatch();
         }
     }
-    
-     private static Dataset getMySQLDataset(Dataset.Usage usage,
+
+    private static Dataset getMySQLDataset(Dataset.Usage usage,
             int contextLength,
             List<TimeSeriesTransform> transformation) throws IOException, Exception {
 
         MySQLDataset.MySQLBBuilder builder
-                = MySQLDataset.gridDBBuilder()
+                = (MySQLDataset.MySQLBBuilder) MySQLDataset.gridDBBuilder()
                         .optUsage(usage)
                         .setTransformation(transformation)
                         .setContextLength(contextLength)
-                        .initData()
-                        .setSampling(12, usage == Dataset.Usage.TRAIN);
+                        .setSampling(32, usage == Dataset.Usage.TRAIN);
+
+        builder.initData();
 
         int maxWeek = usage == Dataset.Usage.TRAIN ? builder.dataLength - 12 : builder.dataLength;
         for (int i = 1; i <= maxWeek; i++) {
@@ -427,10 +428,10 @@ public class MonthlyProductionForecast {
         }
 
         MySQLDataset dataset
-                = builder.addFieldFeature(FieldName.START,
+                = ((MySQLDataset.MySQLBBuilder) builder.addFieldFeature(FieldName.START,
                         new Feature(
                                 "date",
-                                TimeFeaturizers.getConstantTimeFeaturizer(START_TIME)))
+                                TimeFeaturizers.getConstantTimeFeaturizer(START_TIME))))
                         .build();
         dataset.prepare(new ProgressBar());
         return dataset;

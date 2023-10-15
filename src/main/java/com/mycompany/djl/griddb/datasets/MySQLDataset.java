@@ -1,7 +1,5 @@
 package com.mycompany.djl.griddb.datasets;
 
-import ai.djl.basicdataset.tabular.utils.Feature;
-import ai.djl.timeseries.dataset.FieldName;
 import ai.djl.timeseries.dataset.M5Forecast;
 import ai.djl.util.Progress;
 import com.toshiba.mwcloud.gs.GSException;
@@ -28,12 +26,11 @@ public class MySQLDataset extends M5Forecast {
     private final int dataLength;
     private final File csvFile;
 
-    protected MySQLDataset(MySQLBBuilder builder) throws GSException, FileNotFoundException {
-        super(M5Forecast.builder()
-                .optUsage(builder.usage)
-                .optCsvFile(builder.csvFile.toPath()));
-        this.csvFile = builder.csvFile;
-        this.dataLength = builder.dataLength;
+    protected MySQLDataset(M5Forecast.Builder builder) throws GSException, FileNotFoundException {
+        super(M5Forecast.builder()                               
+                .optCsvFile(((MySQLBBuilder)builder).csvFile.toPath()));
+        this.csvFile = ((MySQLBBuilder)builder).csvFile;
+        this.dataLength = ((MySQLBBuilder)builder).dataLength;
     }
 
     /**
@@ -67,12 +64,11 @@ public class MySQLDataset extends M5Forecast {
         return builder;
     }
 
-    public static class MySQLBBuilder extends CsvBuilder {
+    public static class MySQLBBuilder extends M5Forecast.Builder {
 
         Connection connection;
         public int dataLength = 0;
         File csvFile;
-        Usage usage;
 
         MySQLBBuilder() throws ClassNotFoundException, SQLException {
             connection = connectToMySQL();
@@ -87,41 +83,8 @@ public class MySQLDataset extends M5Forecast {
             this.connection.close();
             this.connection = connection;
             return this;
-        }
-
-        @Override
-        public MySQLBBuilder addFieldFeature(FieldName name, Feature feature) {
-            super.addFieldFeature(name, feature);
-            return this;
-        }
-
-        @Override
-        public MySQLBBuilder setTransformation(List transforms) {
-            super.setTransformation(transforms);
-            return this;
-        }
-
-        public MySQLBBuilder optUsage(Usage usage) {
-            this.usage = usage;
-            return this;
-        }
-
-        public void addFeature(String name, FieldName fieldName) {
-            addFieldFeature(fieldName, new Feature(name, false));
-        }
-
-        @Override
-        public MySQLBBuilder setSampling(int size, boolean isRandom) {
-            super.setSampling(size, isRandom);
-            return this;
-        }
-
-        @Override
-        public MySQLBBuilder setContextLength(int size) {
-            super.setContextLength(size);
-            return this;
-        }
-
+        }       
+        
         private File fetchDBDataAndSaveCSV(Connection con) throws Exception {
             File csvOutputFile = new File("out.csv");
             String sql = "Select * from entries";
