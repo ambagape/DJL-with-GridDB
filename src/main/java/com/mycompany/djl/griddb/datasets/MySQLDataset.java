@@ -26,11 +26,11 @@ public class MySQLDataset extends M5Forecast {
     private final int dataLength;
     private final File csvFile;
 
-    protected MySQLDataset(M5Forecast.Builder builder) throws GSException, FileNotFoundException {
-        super(M5Forecast.builder()                               
-                .optCsvFile(((MySQLBBuilder)builder).csvFile.toPath()));
-        this.csvFile = ((MySQLBBuilder)builder).csvFile;
-        this.dataLength = ((MySQLBBuilder)builder).dataLength;
+    protected MySQLDataset(MySQLBBuilder builder) throws GSException, FileNotFoundException {
+        super(builder.forecastBuilder                               
+                .optCsvFile(builder.csvFile.toPath()));
+        this.csvFile = builder.csvFile;
+        this.dataLength = builder.dataLength;
     }
 
     /**
@@ -64,17 +64,17 @@ public class MySQLDataset extends M5Forecast {
         return builder;
     }
 
-    public static class MySQLBBuilder extends M5Forecast.Builder {
+    public static class MySQLBBuilder {
 
         Connection connection;
         public int dataLength = 0;
         File csvFile;
+        M5Forecast.Builder forecastBuilder;
 
         MySQLBBuilder() throws ClassNotFoundException, SQLException {
             connection = connectToMySQL();
         }
 
-        @Override
         protected MySQLBBuilder self() {
             return this;
         }
@@ -105,13 +105,17 @@ public class MySQLDataset extends M5Forecast {
             this.csvFile = fetchDBDataAndSaveCSV(this.connection);
             return this;
         }
+        
+        public MySQLBBuilder addForecastBuilder(M5Forecast.Builder builder){
+            this.forecastBuilder = builder;
+            return this;
+        }
 
-        @Override
-        public MySQLDataset build() {
+        public MySQLDataset build() throws GSException {
             MySQLDataset gridDBDataset = null;
             try {
                 gridDBDataset = new MySQLDataset(this);
-            } catch (GSException | FileNotFoundException ex) {
+            } catch ( FileNotFoundException ex) {
                 Logger.getLogger(MySQLDataset.class.getName()).log(Level.SEVERE, null, ex);
             }
             return gridDBDataset;

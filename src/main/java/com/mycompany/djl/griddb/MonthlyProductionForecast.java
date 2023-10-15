@@ -15,6 +15,7 @@ import ai.djl.nn.Parameter;
 import ai.djl.timeseries.Forecast;
 import ai.djl.timeseries.TimeSeriesData;
 import ai.djl.timeseries.dataset.FieldName;
+import ai.djl.timeseries.dataset.M5Forecast;
 import ai.djl.timeseries.dataset.TimeFeaturizers;
 import ai.djl.timeseries.distribution.DistributionLoss;
 import ai.djl.timeseries.distribution.output.DistributionOutput;
@@ -40,6 +41,7 @@ import ai.djl.util.Progress;
 import com.google.gson.GsonBuilder;
 import com.mycompany.djl.griddb.datasets.GridDBDataset;
 import com.mycompany.djl.griddb.datasets.MySQLDataset;
+import com.mycompany.djl.griddb.datasets.MySQLDataset.MySQLBBuilder;
 import com.mycompany.djl.griddb.db.DB.Entry;
 import com.toshiba.mwcloud.gs.GridStore;
 import com.toshiba.mwcloud.gs.TimeSeries;
@@ -413,26 +415,26 @@ public class MonthlyProductionForecast {
             int contextLength,
             List<TimeSeriesTransform> transformation) throws IOException, Exception {
 
-        MySQLDataset.MySQLBBuilder builder
-                = (MySQLDataset.MySQLBBuilder) MySQLDataset.gridDBBuilder()
+        MySQLBBuilder mysqlBuilder = MySQLDataset.gridDBBuilder().initData();
+            
+        M5Forecast.Builder builder
+                =  M5Forecast.builder()
                         .optUsage(usage)
                         .setTransformation(transformation)
                         .setContextLength(contextLength)
-                        .setSampling(32, usage == Dataset.Usage.TRAIN);
+                        .setSampling(32, usage == Dataset.Usage.TRAIN);       
 
-        builder.initData();
-
-        int maxWeek = usage == Dataset.Usage.TRAIN ? builder.dataLength - 12 : builder.dataLength;
+        int maxWeek = usage == Dataset.Usage.TRAIN ? mysqlBuilder.dataLength - 12 : mysqlBuilder.dataLength;
         for (int i = 1; i <= maxWeek; i++) {
             builder.addFeature("w_" + i, FieldName.TARGET);
         }
 
-        MySQLDataset dataset
-                = ((MySQLDataset.MySQLBBuilder) builder.addFieldFeature(FieldName.START,
+        builder.addFieldFeature(FieldName.START,
                         new Feature(
                                 "date",
-                                TimeFeaturizers.getConstantTimeFeaturizer(START_TIME))))
-                        .build();
+                                TimeFeaturizers.getConstantTimeFeaturizer(START_TIME)));                        
+        
+        MySQLDataset dataset = mysqlBuilder.addForecastBuilder(builder).build();
         dataset.prepare(new ProgressBar());
         return dataset;
     }
