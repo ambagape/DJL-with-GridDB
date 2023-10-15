@@ -415,16 +415,14 @@ public class MonthlyProductionForecast {
             int contextLength,
             List<TimeSeriesTransform> transformation) throws IOException, Exception {
 
-        MySQLBBuilder mysqlBuilder = MySQLDataset.gridDBBuilder().initData();
-            
-        M5Forecast.Builder builder
-                =  M5Forecast.builder()
-                        .optUsage(usage)
+        MySQLBBuilder builder
+                =  ((MySQLBBuilder)MySQLDataset.gridDBBuilder()
                         .setTransformation(transformation)
                         .setContextLength(contextLength)
-                        .setSampling(32, usage == Dataset.Usage.TRAIN);       
+                        .setSampling(32, usage == Dataset.Usage.TRAIN))
+                .initData();       
 
-        int maxWeek = usage == Dataset.Usage.TRAIN ? mysqlBuilder.dataLength - 12 : mysqlBuilder.dataLength;
+        int maxWeek = usage == Dataset.Usage.TRAIN ? builder.dataLength - 12 : builder.dataLength;
         for (int i = 1; i <= maxWeek; i++) {
             builder.addFeature("w_" + i, FieldName.TARGET);
         }
@@ -434,7 +432,7 @@ public class MonthlyProductionForecast {
                                 "date",
                                 TimeFeaturizers.getConstantTimeFeaturizer(START_TIME)));                        
         
-        MySQLDataset dataset = mysqlBuilder.addForecastBuilder(builder).build();
+        Dataset dataset = builder.build();
         dataset.prepare(new ProgressBar());
         return dataset;
     }
