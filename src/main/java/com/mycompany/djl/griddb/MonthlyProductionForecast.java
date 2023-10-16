@@ -422,15 +422,16 @@ public class MonthlyProductionForecast {
                         .setSampling(32, usage == Dataset.Usage.TRAIN))
                 .initData();       
 
-        int maxWeek = usage == Dataset.Usage.TRAIN ? builder.dataLength - 12 : builder.dataLength;
+        /*int maxWeek = usage == Dataset.Usage.TRAIN ? builder.dataLength - 12 : builder.dataLength;
         for (int i = 1; i <= maxWeek; i++) {
             builder.addFeature("w_" + i, FieldName.TARGET);
-        }
+        }*/
 
         builder.addFieldFeature(FieldName.START,
                         new Feature(
-                                "date",
+                                "createdAt",
                                 TimeFeaturizers.getConstantTimeFeaturizer(START_TIME)));                        
+        builder.addFeature("value", FieldName.TARGET);
         
         Dataset dataset = builder.build();
         dataset.prepare(new ProgressBar());
