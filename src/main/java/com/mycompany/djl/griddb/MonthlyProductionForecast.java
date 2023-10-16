@@ -60,6 +60,7 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.logging.Logger;
 
 /**
  *
@@ -74,7 +75,7 @@ public class MonthlyProductionForecast {
     final static int DATA_LENGTH = 397;
     
     public static void main(String[] args) throws Exception {
-        System.out.println("Starting...");
+        Logger.getAnonymousLogger().info("Starting...");
         //GridDBDataset.connectToGridDB();
         //seedDatabase();
         MySQLDataset.connectToMySQL();
@@ -185,6 +186,7 @@ public class MonthlyProductionForecast {
             trainer.initialize(new Shape(1,1));
             int epoch = 10;
             EasyTrain.fit(trainer, epoch, trainSet, null);
+            Logger.getAnonymousLogger().info("Completed training...");
         } finally {
             if (trainer != null) {
                 trainer.close();

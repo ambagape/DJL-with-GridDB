@@ -109,6 +109,7 @@ public class MySQLDataset extends CsvTimeSeriesDataset {
 
         }
 
+        @Override
         protected MySQLBBuilder self() {
             return this;
         }
