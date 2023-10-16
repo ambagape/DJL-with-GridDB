@@ -263,6 +263,7 @@ public class MonthlyProductionForecast {
 
     public static final class M5Evaluator {
 
+        private float[] quantiles;
         Map<String, Float> totalMetrics;
         Map<String, Integer> totalNum;
 
