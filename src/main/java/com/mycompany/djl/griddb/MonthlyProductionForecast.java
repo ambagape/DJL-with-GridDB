@@ -71,7 +71,8 @@ public class MonthlyProductionForecast {
     final static int PREDICTION_LENGTH = 4;
     final static LocalDateTime START_TIME = LocalDateTime.parse("1985-01-01T00:00");
     final static String MODEL_OUTPUT_DIR = "outputs";
-
+    final static int DATA_LENGTH = 397;
+    
     public static void main(String[] args) throws Exception {
         System.out.println("Starting...");
         //GridDBDataset.connectToGridDB();
@@ -199,12 +200,10 @@ public class MonthlyProductionForecast {
 
     private static DeepARNetwork getDeepARModel(DistributionOutput distributionOutput, boolean training) {
 
+        
         List<Integer> cardinality = new ArrayList<>();
-        /*cardinality.add(3);
-        cardinality.add(10);
-        cardinality.add(3);
-        cardinality.add(7);
-        cardinality.add(3049);*/
+       
+        cardinality.add(DATA_LENGTH);
 
         DeepARNetwork.Builder builder = DeepARNetwork.builder()
                 .setCardinality(cardinality)
@@ -247,7 +246,7 @@ public class MonthlyProductionForecast {
                         .initData()
                         .setSampling(12, usage == Dataset.Usage.TRAIN);
 
-        int maxWeek = usage == Dataset.Usage.TRAIN ? builder.dataLength - 12 : builder.dataLength;
+        int maxWeek = usage == Dataset.Usage.TRAIN ? DATA_LENGTH - 12 : DATA_LENGTH;
         for (int i = 1; i <= maxWeek; i++) {
             builder.addFeature("w_" + i, FieldName.TARGET);
         }
@@ -264,7 +263,6 @@ public class MonthlyProductionForecast {
 
     public static final class M5Evaluator {
 
-        private float[] quantiles;
         Map<String, Float> totalMetrics;
         Map<String, Integer> totalNum;
 
