@@ -433,7 +433,7 @@ public class MonthlyProductionForecast {
                                 TimeFeaturizers.getConstantTimeFeaturizer(START_TIME)));                        
         builder.addFeature("value", FieldName.TARGET);
         
-        Dataset dataset = builder.build();
+        Dataset dataset = builder.buildMySQLDataset();
         dataset.prepare(new ProgressBar());
         return dataset;
     }

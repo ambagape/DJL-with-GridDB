@@ -162,7 +162,8 @@ public class MySQLDataset extends CsvTimeSeriesDataset {
         private void parseFeatures() {
             if (mf == null) {
                 try ( InputStream is
-                        = M5Forecast.class.getResourceAsStream("m5forecast_parser.json");  Reader reader = new InputStreamReader(is, StandardCharsets.UTF_8)) {
+                        = M5Forecast.class.getResourceAsStream("m5forecast_parser.json"); 
+                        Reader reader = new InputStreamReader(is, StandardCharsets.UTF_8)) {
                     mf = JsonUtils.GSON.fromJson(reader, M5Features.class);
                 } catch (IOException e) {
                     throw new AssertionError(
