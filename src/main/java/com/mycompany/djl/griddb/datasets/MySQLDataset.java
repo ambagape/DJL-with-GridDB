@@ -125,6 +125,7 @@ public class MySQLDataset extends CsvTimeSeriesDataset {
             String sql = "Select * from entries";
             try ( Statement statement = con.createStatement();  ResultSet resultSet = statement.executeQuery(sql)) {
                 List<String> csv = new LinkedList<>();
+                csv.add("createdAt, value");
                 while (resultSet.next()) {
                     csv.add(String.format("%s, %f", resultSet.getTimestamp("createdAt"), resultSet.getFloat("value")));
                 }

@@ -74,7 +74,7 @@ public class MonthlyProductionForecast {
     final static LocalDateTime START_TIME = LocalDateTime.parse("1985-01-01T00:00");
     final static String MODEL_OUTPUT_DIR = "outputs";
     final static int DATA_LENGTH = 397;
-    
+
     public static void main(String[] args) throws Exception {
         Logger.getAnonymousLogger().info("Starting...");
         //GridDBDataset.connectToGridDB();
@@ -162,18 +162,37 @@ public class MonthlyProductionForecast {
             Dataset trainSet = getMySQLDataset(Dataset.Usage.TRAIN, trainingNetwork.getContextLength(), trainingTransformation);
             trainer = model.newTrainer(setupTrainingConfig(distributionOutput));
             trainer.setMetrics(new Metrics());
-          
-            Shape[] inputShapes = new Shape[2];
-            inputShapes[0] = new Shape(1, trainingNetwork.getContextLength(), 2);
-            inputShapes[1] = new Shape(1, trainingNetwork.getContextLength());
-            
+
+            int historyLength = trainingNetwork.getHistoryLength();
+            Shape[] inputShapes = new Shape[9];
+            // (N, num_cardinality)
+            inputShapes[0] = new Shape(1, 5);
+            // (N, num_real) if use_feat_stat_real else (N, 1)
+            inputShapes[1] = new Shape(1, 1);
+            // (N, history_length, num_time_feat + num_age_feat)
+            inputShapes[2]
+                    = new Shape(
+                            1,
+                            historyLength,
+                            TimeFeature.timeFeaturesFromFreqStr(FREQ).size() + 1);
+            inputShapes[3] = new Shape(1, historyLength);
+            inputShapes[4] = new Shape(1, historyLength);
+            inputShapes[5] = new Shape(1, historyLength);
+            inputShapes[6]
+                    = new Shape(
+                            1,
+                            PREDICTION_LENGTH,
+                            TimeFeature.timeFeaturesFromFreqStr(FREQ).size() + 1);
+            inputShapes[7] = new Shape(1, PREDICTION_LENGTH);
+            inputShapes[8] = new Shape(1, PREDICTION_LENGTH);
+
             trainer.initialize(inputShapes);
             int epoch = 10;
             EasyTrain.fit(trainer, epoch, trainSet, null);
             Logger.getAnonymousLogger().info("Completed training...");
-        }catch(Exception e){
+        } catch (Exception e) {
             Logger.getAnonymousLogger().log(Level.SEVERE, e.getMessage(), e);
-        }finally {
+        } finally {
             if (trainer != null) {
                 trainer.close();
             }
@@ -188,11 +207,13 @@ public class MonthlyProductionForecast {
 
     private static DeepARNetwork getDeepARModel(DistributionOutput distributionOutput, boolean training) {
 
-        
         List<Integer> cardinality = new ArrayList<>();
-        cardinality.add(1);
-        cardinality.add(1);
-       
+        cardinality.add(3);
+        cardinality.add(10);
+        cardinality.add(3);
+        cardinality.add(7);
+        cardinality.add(DATA_LENGTH);
+
         DeepARNetwork.Builder builder = DeepARNetwork.builder()
                 .setCardinality(cardinality)
                 .setFreq(FREQ)
@@ -403,18 +424,18 @@ public class MonthlyProductionForecast {
             List<TimeSeriesTransform> transformation) throws IOException, Exception {
 
         MySQLBBuilder builder
-                =  ((MySQLBBuilder)MySQLDataset.gridDBBuilder()
+                = ((MySQLBBuilder) MySQLDataset.gridDBBuilder()
                         .setTransformation(transformation)
                         .setContextLength(contextLength)
                         .setSampling(32, usage == Dataset.Usage.TRAIN))
-                .initData();              
+                        .initData();
 
         builder.addFieldFeature(FieldName.START,
-                        new Feature(
-                                "createdAt",
-                                TimeFeaturizers.getConstantTimeFeaturizer(START_TIME)));                        
+                new Feature(
+                        "createdAt",
+                        TimeFeaturizers.getConstantTimeFeaturizer(START_TIME)));
         builder.addFeature("value", FieldName.TARGET);
-        
+
         Dataset dataset = builder.buildMySQLDataset();
         dataset.prepare(new ProgressBar());
         return dataset;
