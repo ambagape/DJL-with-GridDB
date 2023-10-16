@@ -160,7 +160,7 @@ public class MonthlyProductionForecast {
             trainer = model.newTrainer(setupTrainingConfig(distributionOutput));
             trainer.setMetrics(new Metrics());
 
-            int historyLength = trainingNetwork.getHistoryLength();
+            /*int historyLength = trainingNetwork.getHistoryLength();
             Shape[] inputShapes = new Shape[9];
             inputShapes[0] = new Shape(1, 5);
             inputShapes[1] = new Shape(1, 1);
@@ -180,8 +180,8 @@ public class MonthlyProductionForecast {
                             PREDICTION_LENGTH,
                             TimeFeature.timeFeaturesFromFreqStr(FREQ).size() + 1);
             inputShapes[7] = new Shape(1, PREDICTION_LENGTH);
-            inputShapes[8] = new Shape(1, PREDICTION_LENGTH);
-            trainer.initialize(inputShapes);
+            inputShapes[8] = new Shape(1, PREDICTION_LENGTH);*/
+            trainer.initialize(new Shape(1,1));
             int epoch = 10;
             EasyTrain.fit(trainer, epoch, trainSet, null);
         } finally {
@@ -200,11 +200,11 @@ public class MonthlyProductionForecast {
     private static DeepARNetwork getDeepARModel(DistributionOutput distributionOutput, boolean training) {
 
         List<Integer> cardinality = new ArrayList<>();
-        cardinality.add(3);
+        /*cardinality.add(3);
         cardinality.add(10);
         cardinality.add(3);
         cardinality.add(7);
-        cardinality.add(3049);
+        cardinality.add(3049);*/
 
         DeepARNetwork.Builder builder = DeepARNetwork.builder()
                 .setCardinality(cardinality)
@@ -420,12 +420,7 @@ public class MonthlyProductionForecast {
                         .setTransformation(transformation)
                         .setContextLength(contextLength)
                         .setSampling(32, usage == Dataset.Usage.TRAIN))
-                .initData();       
-
-        /*int maxWeek = usage == Dataset.Usage.TRAIN ? builder.dataLength - 12 : builder.dataLength;
-        for (int i = 1; i <= maxWeek; i++) {
-            builder.addFeature("w_" + i, FieldName.TARGET);
-        }*/
+                .initData();              
 
         builder.addFieldFeature(FieldName.START,
                         new Feature(
