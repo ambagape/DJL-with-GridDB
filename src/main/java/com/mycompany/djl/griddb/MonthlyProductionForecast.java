@@ -60,6 +60,7 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.logging.Level;
 import java.util.logging.Logger;
 
 /**
@@ -187,7 +188,9 @@ public class MonthlyProductionForecast {
             int epoch = 10;
             EasyTrain.fit(trainer, epoch, trainSet, null);
             Logger.getAnonymousLogger().info("Completed training...");
-        } finally {
+        }catch(Exception e){
+            Logger.getAnonymousLogger().log(Level.SEVERE, e.getMessage(), e);
+        }finally {
             if (trainer != null) {
                 trainer.close();
             }
@@ -392,7 +395,7 @@ public class MonthlyProductionForecast {
             Entry[] entries = getTimeSeriesData(MonthlyProductionForecast.class.getClassLoader().getResource("data/csvjson.json"));
             TimeSeries<Entry> timeSeries = store.putTimeSeries("ENTRIES", Entry.class);
             for (Entry entry : entries) {
-                System.out.println(String.format("%s , %s", entry.createdAt, entry.value));
+                Logger.getAnonymousLogger().info(String.format("%s , %s", entry.createdAt, entry.value));
                 timeSeries.put(entry);
             }
         }
