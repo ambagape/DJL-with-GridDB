@@ -162,29 +162,12 @@ public class MonthlyProductionForecast {
             Dataset trainSet = getMySQLDataset(Dataset.Usage.TRAIN, trainingNetwork.getContextLength(), trainingTransformation);
             trainer = model.newTrainer(setupTrainingConfig(distributionOutput));
             trainer.setMetrics(new Metrics());
-
-            /*int historyLength = trainingNetwork.getHistoryLength();
-            Shape[] inputShapes = new Shape[9];
-            inputShapes[0] = new Shape(1, 5);
-            inputShapes[1] = new Shape(1, 1);
-
-            inputShapes[2]
-                    = new Shape(
-                            1,
-                            historyLength,
-                            TimeFeature.timeFeaturesFromFreqStr(FREQ).size() + 1);
-            inputShapes[3] = new Shape(1, historyLength);
-            inputShapes[4] = new Shape(1, historyLength);
-            inputShapes[5] = new Shape(1, historyLength);
-
-            inputShapes[6]
-                    = new Shape(
-                            1,
-                            PREDICTION_LENGTH,
-                            TimeFeature.timeFeaturesFromFreqStr(FREQ).size() + 1);
-            inputShapes[7] = new Shape(1, PREDICTION_LENGTH);
-            inputShapes[8] = new Shape(1, PREDICTION_LENGTH);*/
-            trainer.initialize(new Shape(1,1));
+          
+            Shape[] inputShapes = new Shape[2];
+            inputShapes[0] = new Shape(1, trainingNetwork.getContextLength(), 2);
+            inputShapes[1] = new Shape(1, trainingNetwork.getContextLength());
+            
+            trainer.initialize(inputShapes);
             int epoch = 10;
             EasyTrain.fit(trainer, epoch, trainSet, null);
             Logger.getAnonymousLogger().info("Completed training...");
@@ -207,9 +190,9 @@ public class MonthlyProductionForecast {
 
         
         List<Integer> cardinality = new ArrayList<>();
+        cardinality.add(1);
+        cardinality.add(1);
        
-        cardinality.add(DATA_LENGTH);
-
         DeepARNetwork.Builder builder = DeepARNetwork.builder()
                 .setCardinality(cardinality)
                 .setFreq(FREQ)
