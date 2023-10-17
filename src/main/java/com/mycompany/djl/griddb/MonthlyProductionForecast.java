@@ -8,21 +8,16 @@ import ai.djl.metric.Metrics;
 import ai.djl.ndarray.NDArray;
 import ai.djl.ndarray.NDArrays;
 import ai.djl.ndarray.NDList;
-import ai.djl.ndarray.NDManager;
 import ai.djl.ndarray.types.DataType;
 import ai.djl.ndarray.types.Shape;
-import ai.djl.nn.Parameter;
+import ai.djl.nn.Block;
+import ai.djl.nn.SequentialBlock;
+import ai.djl.nn.core.Linear;
+import ai.djl.nn.recurrent.LSTM;
 import ai.djl.timeseries.Forecast;
 import ai.djl.timeseries.TimeSeriesData;
 import ai.djl.timeseries.dataset.FieldName;
-import ai.djl.timeseries.dataset.M5Forecast;
 import ai.djl.timeseries.dataset.TimeFeaturizers;
-import ai.djl.timeseries.distribution.DistributionLoss;
-import ai.djl.timeseries.distribution.output.DistributionOutput;
-import ai.djl.timeseries.distribution.output.NegativeBinomialOutput;
-import ai.djl.timeseries.evaluator.Rmsse;
-import ai.djl.timeseries.model.deepar.DeepARNetwork;
-import ai.djl.timeseries.timefeature.TimeFeature;
 import ai.djl.timeseries.transform.TimeSeriesTransform;
 import ai.djl.timeseries.translator.DeepARTranslator;
 import ai.djl.training.DefaultTrainingConfig;
@@ -31,7 +26,7 @@ import ai.djl.training.Trainer;
 import ai.djl.training.TrainingResult;
 import ai.djl.training.dataset.Batch;
 import ai.djl.training.dataset.Dataset;
-import ai.djl.training.initializer.XavierInitializer;
+import ai.djl.training.evaluator.Accuracy;
 import ai.djl.training.listener.SaveModelTrainingListener;
 import ai.djl.training.listener.TrainingListener;
 import ai.djl.training.loss.Loss;
@@ -60,7 +55,6 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.logging.Level;
 import java.util.logging.Logger;
 
 /**
@@ -87,13 +81,13 @@ public class MonthlyProductionForecast {
     public static Map<String, Float> predict(String outputDir)
             throws IOException, TranslateException, ModelException, Exception {
         try ( Model model = Model.newInstance("deepar")) {
-            DeepARNetwork predictionNetwork = getDeepARModel(new NegativeBinomialOutput(), false);
+            Block predictionNetwork = getLSTMModel();
             model.setBlock(predictionNetwork);
             model.load(Paths.get(MODEL_OUTPUT_DIR));
 
             Dataset testSet
                     //= getDataset(Dataset.Usage.TEST, predictionNetwork.getContextLength(), new ArrayList<>());
-                    = getMySQLDataset(Dataset.Usage.TEST, predictionNetwork.getContextLength(), new ArrayList<>());
+                    = getMySQLDataset();
 
             Map<String, Object> arguments = new ConcurrentHashMap<>();
             arguments.put("prediction_length", 1); // Univariate, so predict one value at a time
@@ -144,101 +138,64 @@ public class MonthlyProductionForecast {
     }
 
     private static void startTraining() throws IOException, TranslateException, Exception {
+        Model model = Model.newInstance("lstm"); 
+        Block trainingNetwork = getLSTMModel();
+        model.setBlock(trainingNetwork);
 
-        DistributionOutput distributionOutput = new NegativeBinomialOutput();
+        Dataset trainSet = getMySQLDataset();
+        Dataset validationSet = getMySQLDataset();
 
-        Model model = null;
-        Trainer trainer = null;
-        NDManager manager = null;
-        try {
-            manager = NDManager.newBaseManager();
-            model = Model.newInstance("deepar");
-            DeepARNetwork trainingNetwork = getDeepARModel(distributionOutput, true);
-            model.setBlock(trainingNetwork);
-
-            List<TimeSeriesTransform> trainingTransformation = trainingNetwork.createTrainingTransformation(manager);
-
-            //Dataset trainSet = getDataset(Dataset.Usage.TRAIN, trainingNetwork.getContextLength(), trainingTransformation);
-            Dataset trainSet = getMySQLDataset(Dataset.Usage.TRAIN, trainingNetwork.getContextLength(), trainingTransformation);
-            trainer = model.newTrainer(setupTrainingConfig(distributionOutput));
+        try ( Trainer trainer = model.newTrainer(setupTrainingConfig())) {
             trainer.setMetrics(new Metrics());
 
-            int historyLength = trainingNetwork.getHistoryLength();
-            Shape[] inputShapes = new Shape[9];
-            // (N, num_cardinality)
-            inputShapes[0] = new Shape(1, 5);
-            // (N, num_real) if use_feat_stat_real else (N, 1)
-            inputShapes[1] = new Shape(1, 1);
-            // (N, history_length, num_time_feat + num_age_feat)
-            inputShapes[2]
-                    = new Shape(
-                            1,
-                            historyLength,
-                            TimeFeature.timeFeaturesFromFreqStr(FREQ).size() + 1);
-            inputShapes[3] = new Shape(1, historyLength);
-            inputShapes[4] = new Shape(1, historyLength);
-            inputShapes[5] = new Shape(1, historyLength);
-            inputShapes[6]
-                    = new Shape(
-                            1,
-                            PREDICTION_LENGTH,
-                            TimeFeature.timeFeaturesFromFreqStr(FREQ).size() + 1);
-            inputShapes[7] = new Shape(1, PREDICTION_LENGTH);
-            inputShapes[8] = new Shape(1, PREDICTION_LENGTH);
+            Shape inputShape = new Shape(32, 1, 1);
 
-            trainer.initialize(inputShapes);
+            trainer.initialize(inputShape);
+
             int epoch = 10;
-            EasyTrain.fit(trainer, epoch, trainSet, null);
+
+            EasyTrain.fit(trainer, epoch, trainSet, validationSet);
             Logger.getAnonymousLogger().info("Completed training...");
-        } catch (Exception e) {
-            Logger.getAnonymousLogger().log(Level.SEVERE, e.getMessage(), e);
-        } finally {
-            if (trainer != null) {
-                trainer.close();
-            }
-            if (model != null) {
-                model.close();
-            }
-            if (manager != null) {
-                manager.close();
-            }
         }
     }
 
-    private static DeepARNetwork getDeepARModel(DistributionOutput distributionOutput, boolean training) {
+    private static Block getLSTMModel() {
+        SequentialBlock block = new SequentialBlock();
+        block.add(
+                inputs -> {
+                    NDArray input = inputs.singletonOrThrow();
+                    Shape inputShape = input.getShape();
+                    long batchSize = inputShape.get(0);
+                    long time = inputShape.get(1);
+                    return new NDList(input.reshape(new Shape(batchSize, time, 1)));
+                }
+        );
+        block.add(
+                new LSTM.Builder()
+                        .setStateSize(64)
+                        .setNumLayers(1)
+                        .optDropRate(0)
+                        .build()
+        );
+        block.add(Linear.builder().setUnits(1).build());
 
-        List<Integer> cardinality = new ArrayList<>();
-        cardinality.add(3);
-        cardinality.add(10);
-        cardinality.add(3);
-        cardinality.add(7);
-        cardinality.add(DATA_LENGTH);
-
-        DeepARNetwork.Builder builder = DeepARNetwork.builder()
-                .setCardinality(cardinality)
-                .setFreq(FREQ)
-                .setPredictionLength(PREDICTION_LENGTH)
-                .optDistrOutput(distributionOutput)
-                .optUseFeatStaticCat(false);
-
-        return training ? builder.buildTrainingNetwork() : builder.buildPredictionNetwork();
+        return block;
     }
 
-    private static DefaultTrainingConfig setupTrainingConfig(DistributionOutput distributionOutput) {
+    private static DefaultTrainingConfig setupTrainingConfig() {
 
         SaveModelTrainingListener listener = new SaveModelTrainingListener(MODEL_OUTPUT_DIR);
         listener.setSaveModelCallback(
                 trainer -> {
                     TrainingResult result = trainer.getTrainingResult();
                     Model model = trainer.getModel();
-                    float rmsse = result.getValidateEvaluation("RMSSE");
-                    model.setProperty("RMSSE", String.format("%.5f", rmsse));
+                    float accuracy = result.getValidateEvaluation("Accuracy");
+                    model.setProperty("Accuracy", String.format("%.5f", accuracy));
                     model.setProperty("Loss", String.format("%.5f", result.getValidateLoss()));
                 });
 
-        return new DefaultTrainingConfig(new DistributionLoss("Loss", distributionOutput))
-                .addEvaluator(new Rmsse(distributionOutput))
-                .optInitializer(new XavierInitializer(), Parameter.Type.WEIGHT)
+        return new DefaultTrainingConfig(Loss.softmaxCrossEntropyLoss())
+                .addEvaluator(new Accuracy())
                 .addTrainingListeners(TrainingListener.Defaults.logging(MODEL_OUTPUT_DIR))
                 .addTrainingListeners(listener);
     }
@@ -419,23 +376,13 @@ public class MonthlyProductionForecast {
         }
     }
 
-    private static Dataset getMySQLDataset(Dataset.Usage usage,
-            int contextLength,
-            List<TimeSeriesTransform> transformation) throws IOException, Exception {
+    private static Dataset getMySQLDataset() throws IOException, Exception {
 
         MySQLBBuilder builder
-                = ((MySQLBBuilder) MySQLDataset.gridDBBuilder()
-                        .setTransformation(transformation)
-                        .setContextLength(contextLength)
-                        .setSampling(32, usage == Dataset.Usage.TRAIN))
-                        .initData();
-
-        builder.addFieldFeature(FieldName.START,
-                new Feature(
-                        "createdAt",
-                        TimeFeaturizers.getConstantTimeFeaturizer(START_TIME)));
-        builder.addFeature("value", FieldName.TARGET);
-
+                = (MySQLDataset.gridDBBuilder()
+                        .setSampling(32, false)
+                        .initData());
+       
         Dataset dataset = builder.buildMySQLDataset();
         dataset.prepare(new ProgressBar());
         return dataset;

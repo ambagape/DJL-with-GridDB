@@ -1,74 +1,36 @@
 package com.mycompany.djl.griddb.datasets;
 
-import ai.djl.basicdataset.tabular.utils.Feature;
-import ai.djl.basicdataset.tabular.utils.Featurizers;
-import ai.djl.timeseries.dataset.CsvTimeSeriesDataset;
-import ai.djl.timeseries.dataset.FieldName;
-import ai.djl.timeseries.dataset.M5Forecast;
+import ai.djl.ndarray.NDArray;
+import ai.djl.ndarray.NDManager;
+import ai.djl.training.dataset.ArrayDataset;
 import ai.djl.training.dataset.Dataset;
-import ai.djl.util.JsonUtils;
-import ai.djl.util.Progress;
 import com.toshiba.mwcloud.gs.GSException;
 import java.io.File;
 import java.io.FileNotFoundException;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.InputStreamReader;
-import java.io.PrintWriter;
-import java.io.Reader;
-import java.nio.charset.StandardCharsets;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.ArrayList;
-import java.util.LinkedList;
 import java.util.List;
-import java.util.Map;
-import java.util.Set;
 import java.util.logging.Level;
 import java.util.logging.Logger;
-import org.apache.commons.csv.CSVFormat;
 /**
  *
  * @author ambag
  */
-public class MySQLDataset extends CsvTimeSeriesDataset {
+public class MySQLDataset extends ArrayDataset {
 
-    private final int dataLength;
-    private final File csvFile;
     private boolean prepared;
-    private List<Integer> cardinality;
+    NDManager manager = NDManager.newBaseManager();
 
     protected MySQLDataset(MySQLBBuilder builder) throws GSException, FileNotFoundException {
-        super(builder);
-        this.csvFile = builder.csvFile;
-        this.dataLength = builder.dataLength;
-        this.cardinality = builder.cardinality;
+        super(new ArrayDataset.Builder()
+                .setData(builder.data[0])
+                .optLabels(builder.data[1]));
     }
-
-    /**
-     * {@inheritDoc}
-     */
-    @Override
-    public void prepare(Progress progress) throws IOException {
-        if (prepared) {
-            return;
-        }
-        csvUrl = this.csvFile.toURI().toURL();
-        super.prepare(progress);
-        prepared = true;
-    }
-
-    public int getDataLength() {
-        return this.dataLength;
-    }
-
-    public List<Integer> getCardinality() {
-        return cardinality;
-    }
-
+    
     public static Connection connectToMySQL() throws ClassNotFoundException, SQLException {
         Class.forName("com.mysql.cj.jdbc.Driver");
         String jdbcUrl = "jdbc:mysql://localhost:3306/dij";
@@ -87,29 +49,17 @@ public class MySQLDataset extends CsvTimeSeriesDataset {
         return builder;
     }
 
-    public static class MySQLBBuilder extends CsvBuilder<MySQLBBuilder> {
+    public static class MySQLBBuilder {
 
         Connection connection;
-        public int dataLength = 0;
-        File csvFile;
-        M5Features mf;
-        List<Integer> cardinality;
+        NDArray[] data;
+        int batchSize;
+        boolean shuffle;
 
         MySQLBBuilder() throws ClassNotFoundException, SQLException {
-            connection = connectToMySQL();
-            csvFormat
-                    = CSVFormat.DEFAULT
-                            .builder()
-                            .setHeader()
-                            .setSkipHeaderRecord(true)
-                            .setIgnoreHeaderCase(true)
-                            .setTrim(true)
-                            .build();
-            cardinality = new ArrayList<>();
-
+            connection = connectToMySQL();            
         }
-
-        @Override
+        
         protected MySQLBBuilder self() {
             return this;
         }
@@ -120,58 +70,38 @@ public class MySQLDataset extends CsvTimeSeriesDataset {
             return this;
         }
 
-        private File fetchDBDataAndSaveCSV(Connection con) throws Exception {
-            File csvOutputFile = new File("out.csv");
+        private NDArray[] fetchDBDataAndSaveCSV(Connection con) throws Exception {
+            NDManager manager = NDManager.newBaseManager();
+            List<Long> features =  new ArrayList<>();
+            List<Float> labels = new ArrayList<>();
+            
             String sql = "Select * from entries";
             try ( Statement statement = con.createStatement();  ResultSet resultSet = statement.executeQuery(sql)) {
-                List<String> csv = new LinkedList<>();
-                csv.add("createdAt, value");
+                
                 while (resultSet.next()) {
-                    csv.add(String.format("%s, %f", resultSet.getTimestamp("createdAt"), resultSet.getFloat("value")));
-                }
-                try ( PrintWriter pw = new PrintWriter(csvOutputFile)) {
-                    csv.stream()
-                            .forEach(pw::println);
-                }
+                    features.add(resultSet.getTimestamp("createdAt").getTime());
+                    labels.add(resultSet.getFloat("value"));
+                }               
             }
-            return csvOutputFile;
+            float[] arrayLabels = new float[labels.size()];
+            long[] arrayFeatures = new long[features.size()];
+            for(int i=0; i < features.size(); i++){
+                arrayLabels[i] = labels.get(i);
+                arrayFeatures[i] = features.get(i);
+            }
+                
+            return new NDArray[] {manager.create(arrayFeatures), manager.create(arrayLabels)};
         }
-
-        public MySQLBBuilder initData() throws FileNotFoundException, Exception {
-            this.csvFile = fetchDBDataAndSaveCSV(this.connection);
+        
+        public MySQLBBuilder setSampling(int batchSize, boolean shuffle){
+            this.batchSize = batchSize;
+            this.shuffle = shuffle;
             return this;
         }
 
-        public MySQLBBuilder addFeature(String name, FieldName fieldName) {
-            return addFeature(name, fieldName, false);
-        }
-
-        public MySQLBBuilder addFeature(String name, FieldName fieldName, boolean onehotEncode) {
-            parseFeatures();
-            if (mf.categorical.contains(name)) {
-                Map<String, Integer> map = mf.featureToMap.get(name);
-                if (map == null) {
-                    return addFieldFeature(
-                            fieldName,
-                            new Feature(name, Featurizers.getStringFeaturizer(onehotEncode)));
-                }
-                cardinality.add(map.size());
-                return addFieldFeature(fieldName, new Feature(name, map, onehotEncode));
-            }
-            return addFieldFeature(fieldName, new Feature(name, true));
-        }
-
-        private void parseFeatures() {
-            if (mf == null) {
-                try ( InputStream is
-                        = M5Forecast.class.getResourceAsStream("m5forecast_parser.json"); 
-                        Reader reader = new InputStreamReader(is, StandardCharsets.UTF_8)) {
-                    mf = JsonUtils.GSON.fromJson(reader, M5Features.class);
-                } catch (IOException e) {
-                    throw new AssertionError(
-                            "Failed to read m5forecast_parser.json from classpath", e);
-                }
-            }
+        public MySQLBBuilder initData() throws FileNotFoundException, Exception {
+            this.data = fetchDBDataAndSaveCSV(this.connection);
+            return this;
         }
 
         public Dataset buildMySQLDataset() throws GSException {
@@ -185,10 +115,4 @@ public class MySQLDataset extends CsvTimeSeriesDataset {
         }
     }
 
-    private static final class M5Features {
-
-        List<String> featureArray;
-        Set<String> categorical;
-        Map<String, Map<String, Integer>> featureToMap;
-    }
 }
