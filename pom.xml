@@ -52,6 +52,12 @@
             <groupId>ai.djl.timeseries</groupId>
             <artifactId>timeseries</artifactId>
             <version>0.23.0</version>
+            <classifier>sources</classifier>
+        </dependency>
+         <dependency>
+            <groupId>ai.djl.timeseries</groupId>
+            <artifactId>timeseries</artifactId>
+            <version>0.23.0</version>
         </dependency>
         <dependency>
             <groupId>ai.djl.huggingface</groupId>
