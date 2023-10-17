@@ -28,7 +28,8 @@ public class MySQLDataset extends ArrayDataset {
     protected MySQLDataset(MySQLBBuilder builder) throws GSException, FileNotFoundException {
         super(new ArrayDataset.Builder()
                 .setData(builder.data[0])
-                .optLabels(builder.data[1]));
+                .optLabels(builder.data[1])
+                .setSampling(builder.batchSize, builder.shuffle));
     }
     
     public static Connection connectToMySQL() throws ClassNotFoundException, SQLException {
