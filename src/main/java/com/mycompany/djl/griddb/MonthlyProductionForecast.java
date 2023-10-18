@@ -148,7 +148,7 @@ public class MonthlyProductionForecast {
         try ( Trainer trainer = model.newTrainer(setupTrainingConfig())) {
             trainer.setMetrics(new Metrics());
 
-            Shape inputShape = new Shape(32, 1, 1);
+            Shape inputShape = new Shape(32, 2, 1);
 
             trainer.initialize(inputShape);
 
@@ -161,7 +161,7 @@ public class MonthlyProductionForecast {
 
     private static Block getLSTMModel() {
         SequentialBlock block = new SequentialBlock();
-        block.add(
+        /*block.add(
                 inputs -> {
                     NDArray input = inputs.singletonOrThrow();
                     Shape inputShape = input.getShape();
@@ -169,7 +169,7 @@ public class MonthlyProductionForecast {
                     long time = inputShape.get(1);
                     return new NDList(input.reshape(new Shape(batchSize, time, 1)));
                 }
-        );
+        );*/
         block.add(
                 new LSTM.Builder()
                         .setStateSize(64)
