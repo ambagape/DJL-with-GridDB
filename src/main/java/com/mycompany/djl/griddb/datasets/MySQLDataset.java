@@ -5,7 +5,6 @@ import ai.djl.ndarray.NDManager;
 import ai.djl.training.dataset.ArrayDataset;
 import ai.djl.training.dataset.Dataset;
 import com.toshiba.mwcloud.gs.GSException;
-import java.io.File;
 import java.io.FileNotFoundException;
 import java.sql.Connection;
 import java.sql.DriverManager;
