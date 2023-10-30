@@ -26,15 +26,15 @@ import ai.djl.training.util.ProgressBar;
 import ai.djl.translate.TranslateException;
 import com.mycompany.djl.griddb.datasets.GridDBDataset;
 import com.opencsv.CSVReader;
-import com.toshiba.mwcloud.gs.Collection;
 import com.toshiba.mwcloud.gs.ColumnInfo;
 import com.toshiba.mwcloud.gs.Container;
 import com.toshiba.mwcloud.gs.ContainerInfo;
 import com.toshiba.mwcloud.gs.ContainerType;
+import com.toshiba.mwcloud.gs.GSException;
 import com.toshiba.mwcloud.gs.GSType;
 import com.toshiba.mwcloud.gs.GridStore;
 import com.toshiba.mwcloud.gs.Row;
-import java.io.FileReader;
+import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.net.URL;
@@ -48,13 +48,14 @@ import java.util.logging.Logger;
  *
  * @author ambag
  */
-public class MonthlyProductionForecast {
+public class Forecaster {
 
     final static String FREQ = "W";
     final static int PREDICTION_LENGTH = 4;
-    final static LocalDateTime START_TIME = LocalDateTime.parse("1985-01-01T00:00");
+    final static LocalDateTime START_TIME = LocalDateTime.parse("2011-01-29T00:00");
     final static String MODEL_OUTPUT_DIR = "outputs";
-    final static int DATA_LENGTH = 397;
+    final static String TRAINING_COLLECTION_NAME = "NNTraining";
+    final static String VALIDATION_COLLECTION_NAME = "NNValidation";
 
     public static void main(String[] args) throws Exception {
         Logger.getAnonymousLogger().info("Starting...");
@@ -67,7 +68,6 @@ public class MonthlyProductionForecast {
 
     public static void predict(String outputDir)
             throws IOException, TranslateException, ModelException, Exception {
-
     }
 
     private static void startTraining() throws IOException, TranslateException, Exception {
@@ -75,7 +75,6 @@ public class MonthlyProductionForecast {
         try ( Model model = Model.newInstance("deepar")) {
             // specify the model distribution output, for M5 case, NegativeBinomial best describe it
             DistributionOutput distributionOutput = new NegativeBinomialOutput();
-            DefaultTrainingConfig config = setupTrainingConfig(distributionOutput);
 
             NDManager manager = model.getNDManager();
             DeepARNetwork trainingNetwork = getDeepARModel(distributionOutput, true);
@@ -87,6 +86,8 @@ public class MonthlyProductionForecast {
 
             M5Forecast trainSet
                     = getDataset(trainingTransformation, contextLength, Dataset.Usage.TRAIN);
+
+            DefaultTrainingConfig config = setupTrainingConfig(distributionOutput);
 
             try ( Trainer trainer = model.newTrainer(config)) {
                 trainer.setMetrics(new Metrics());
@@ -160,17 +161,20 @@ public class MonthlyProductionForecast {
 
     private static M5Forecast getDataset(
             List<TimeSeriesTransform> transformation, int contextLength, Dataset.Usage usage)
-            throws IOException {
+            throws IOException, GSException, FileNotFoundException, NoSuchFieldException, IllegalArgumentException, IllegalAccessException {
         // In order to create a TimeSeriesDataset, you must specify the transformation of the data
         // preprocessing
         GridDBDataset.GridDBBuilder builder
                 = GridDBDataset.gridDBBuilder()
+                        .setContainerName(usage == Dataset.Usage.TRAIN?  TRAINING_COLLECTION_NAME: VALIDATION_COLLECTION_NAME )
                         .optUsage(usage)
                         .setTransformation(transformation)
                         .setContextLength(contextLength)
                         .setSize(32)
+                        .setStartTime(START_TIME)
                         .setRandom(usage == Dataset.Usage.TRAIN)
-                        .setMaxWeek(usage == Dataset.Usage.TRAIN ? 273 : 277);
+                        .setMaxWeek(usage == Dataset.Usage.TRAIN ? 273 : 277)
+                        .initData();
 
         M5Forecast m5Forecast = builder.build();
 
@@ -182,12 +186,13 @@ public class MonthlyProductionForecast {
     We assume the database is already containing the timeseries data
      */
     private static void seedDatabase() throws Exception {
-        URL trainingData = MonthlyProductionForecast.class.getClassLoader().getResource("data/weekly_sales_train_evaluation.csv");
-        URL validationData = MonthlyProductionForecast.class.getClassLoader().getResource("data/weekly_sales_train_validation.csv");
+        URL trainingData = Forecaster.class.getClassLoader().getResource("data/weekly_sales_train_evaluation.csv");
+        URL validationData = Forecaster.class.getClassLoader().getResource("data/weekly_sales_train_validation.csv");
         String[] nextRecord;
         try ( GridStore store = GridDBDataset.connectToGridDB();  CSVReader csvReader = new CSVReader(new InputStreamReader(trainingData.openStream(), StandardCharsets.UTF_8));  CSVReader csvValidationReader = new CSVReader(new InputStreamReader(validationData.openStream(), StandardCharsets.UTF_8))) {
-            String TrainingCollectionName = "NNTraining";
-
+            store.dropContainer(TRAINING_COLLECTION_NAME);
+            store.dropContainer(VALIDATION_COLLECTION_NAME);
+            
             List<ColumnInfo> columnInfoList = new ArrayList<>();
 
             nextRecord = csvReader.readNext();
@@ -198,33 +203,32 @@ public class MonthlyProductionForecast {
 
             ContainerInfo containerInfo = new ContainerInfo();
             containerInfo.setColumnInfoList(columnInfoList);
-            containerInfo.setName(TrainingCollectionName);
+            containerInfo.setName(TRAINING_COLLECTION_NAME);
             containerInfo.setType(ContainerType.COLLECTION);
-
-            Container<String, Row> container = store.putContainer(TrainingCollectionName, containerInfo, false);
+            
+            Container<String, Row> container = store.putContainer(TRAINING_COLLECTION_NAME, containerInfo, false);
+            
             while ((nextRecord = csvReader.readNext()) != null) {
                 Row row = container.createRow();
                 for (int i = 0; i < nextRecord.length; i++) {
                     row.setString(i, nextRecord[i]);
                 }
                 container.put(row);
-            }
+            }            
 
-            String ValidationCollectionName = "NNValidation";
-          
             nextRecord = csvValidationReader.readNext();
             columnInfoList.clear();
             for (int i = 0; i < nextRecord.length; i++) {
                 ColumnInfo columnInfo = new ColumnInfo(nextRecord[i], GSType.STRING);
                 columnInfoList.add(columnInfo);
             }
-            
+
             containerInfo = new ContainerInfo();
-            containerInfo.setName(ValidationCollectionName);            
-            containerInfo.setColumnInfoList(columnInfoList);            
+            containerInfo.setName(VALIDATION_COLLECTION_NAME);
+            containerInfo.setColumnInfoList(columnInfoList);
             containerInfo.setType(ContainerType.COLLECTION);
-            
-            container = store.putContainer(ValidationCollectionName, containerInfo, false);
+
+            container = store.putContainer(VALIDATION_COLLECTION_NAME, containerInfo, false);
             while ((nextRecord = csvValidationReader.readNext()) != null) {
                 Row row = container.createRow();
                 for (int i = 0; i < nextRecord.length; i++) {

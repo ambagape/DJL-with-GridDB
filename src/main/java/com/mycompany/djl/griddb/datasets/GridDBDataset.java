@@ -8,22 +8,30 @@ import ai.djl.timeseries.transform.TimeSeriesTransform;
 import ai.djl.util.Progress;
 import com.toshiba.mwcloud.gs.ColumnInfo;
 import com.toshiba.mwcloud.gs.Container;
+import com.toshiba.mwcloud.gs.ContainerInfo;
 import com.toshiba.mwcloud.gs.GSException;
 import com.toshiba.mwcloud.gs.GridStore;
 import com.toshiba.mwcloud.gs.GridStoreFactory;
 import com.toshiba.mwcloud.gs.Query;
+import com.toshiba.mwcloud.gs.Row;
 import com.toshiba.mwcloud.gs.RowSet;
+import java.io.BufferedInputStream;
 import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.io.PrintWriter;
-import java.lang.reflect.Field;
+import java.io.Reader;
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Properties;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import java.util.zip.GZIPInputStream;
+import org.apache.commons.csv.CSVParser;
 
 /**
  *
@@ -74,7 +82,18 @@ public class GridDBDataset extends M5Forecast {
     @Override
     public void prepare(Progress progress) throws IOException {
         csvUrl = this.csvFile.toURI().toURL();
-        super.prepare(progress);
+        try ( Reader reader = new InputStreamReader(getCsvStream(), StandardCharsets.UTF_8)) {
+            CSVParser csvParser = new CSVParser(reader, csvFormat);
+            csvRecords = csvParser.getRecords();
+        }
+        prepareFeaturizers();
+    }
+
+    private InputStream getCsvStream() throws IOException {
+        if (csvUrl.getFile().endsWith(".gz")) {
+            return new GZIPInputStream(csvUrl.openStream());
+        }
+        return new BufferedInputStream(csvUrl.openStream());
     }
 
     public int getDataLength() {
@@ -83,7 +102,7 @@ public class GridDBDataset extends M5Forecast {
 
     public static GridStore connectToGridDB() throws GSException {
         Properties props = new Properties();
-        props.setProperty("notificationMember", "127.0.0.1:10001");
+        props.setProperty("notificationMember", "172.18.0.3:10001");
         props.setProperty("clusterName", "defaultCluster");
         props.setProperty("user", "admin");
         props.setProperty("password", "admin");
@@ -162,11 +181,11 @@ public class GridDBDataset extends M5Forecast {
             return containerName;
         }
 
-        public void setContainerName(String containerName) {
+        public GridDBBuilder setContainerName(String containerName) {
             this.containerName = containerName;
+            return this;
         }
 
-        
         public int getMaxWeek() {
             return maxWeek;
         }
@@ -205,27 +224,37 @@ public class GridDBDataset extends M5Forecast {
         }
 
         private File fetchDBDataAndSaveCSV(GridStore store) throws GSException, FileNotFoundException, NoSuchFieldException, IllegalArgumentException, IllegalAccessException {
-            File csvOutputFile = new File("out.csv");
+            File csvOutputFile = new File(this.containerName+".csv");
             try ( GridStore store2 = store) {
                 Container container = store2.getContainer(this.containerName);
+
                 Query query = container.query("Select *");
-                RowSet rowSet = query.getRowSet();
+                RowSet<Row> rowSet = query.fetch();
+
                 dataLength = rowSet.size();
-                int columnCount = rowSet.getSchema().getColumnCount(); 
-                
+                int columnCount = rowSet.getSchema().getColumnCount();
+
                 List<String> csv = new LinkedList<>();
                 StringBuilder builder = new StringBuilder();
-               
+
+                //Loan column headers
+                ContainerInfo cInfo = rowSet.getSchema();
+                for (int i = 0; i < cInfo.getColumnCount(); i++) {
+                    ColumnInfo columnInfo = rowSet.getSchema().getColumnInfo(i);
+                    builder.append(columnInfo.getName());
+                    appendComma(builder, i, cInfo.getColumnCount());
+                }
+                csv.add(builder.toString());
+
+                //Load each row
                 while (rowSet.hasNext()) {
-                    Object row = rowSet.next();
-                    for(int i = 0; i < columnCount; i++){
-                        ColumnInfo colInfo = rowSet.getSchema().getColumnInfo(i);
-                        Field field = row.getClass().getDeclaredField(colInfo.getName());
-                        builder.append(field.get(row));
-                        if (i < columnCount - 1)
-                            builder.append(",");
+                    Row row = rowSet.next();
+                    builder = new StringBuilder();
+                    for (int i = 0; i < columnCount; i++) {
+                        String val = row.getString(i);
+                        builder.append(val);
+                        appendComma(builder, i, columnCount);
                     }
-                    
                     csv.add(builder.toString());
                 }
                 try ( PrintWriter pw = new PrintWriter(csvOutputFile)) {
@@ -234,6 +263,12 @@ public class GridDBDataset extends M5Forecast {
                 }
             }
             return csvOutputFile;
+        }
+
+        private static void appendComma(StringBuilder builder, int columnIndex, int length) {
+            if (columnIndex < length - 1) {
+                builder.append(",");
+            }
         }
 
         public GridDBBuilder initData() throws GSException, FileNotFoundException, NoSuchFieldException, IllegalArgumentException, IllegalAccessException {
