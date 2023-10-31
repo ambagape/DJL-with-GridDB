@@ -5,11 +5,16 @@ import ai.djl.timeseries.dataset.FieldName;
 import ai.djl.timeseries.dataset.M5Forecast;
 import ai.djl.timeseries.dataset.TimeFeaturizers;
 import ai.djl.timeseries.transform.TimeSeriesTransform;
+import ai.djl.training.dataset.Dataset;
 import ai.djl.util.Progress;
+import com.mycompany.djl.griddb.Forecaster;
+import com.opencsv.CSVReader;
 import com.toshiba.mwcloud.gs.ColumnInfo;
 import com.toshiba.mwcloud.gs.Container;
 import com.toshiba.mwcloud.gs.ContainerInfo;
+import com.toshiba.mwcloud.gs.ContainerType;
 import com.toshiba.mwcloud.gs.GSException;
+import com.toshiba.mwcloud.gs.GSType;
 import com.toshiba.mwcloud.gs.GridStore;
 import com.toshiba.mwcloud.gs.GridStoreFactory;
 import com.toshiba.mwcloud.gs.Query;
@@ -23,8 +28,10 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.PrintWriter;
 import java.io.Reader;
+import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Properties;
@@ -39,14 +46,15 @@ import org.apache.commons.csv.CSVParser;
  */
 public class GridDBDataset extends M5Forecast {
 
-    private final int dataLength;
+    final static String TRAINING_COLLECTION_NAME = "NNTraining";
+    final static String VALIDATION_COLLECTION_NAME = "NNValidation";
+
     private final File csvFile;
     static private M5Forecast.Builder forecastBuilder;
 
     protected GridDBDataset(GridDBBuilder builder) throws GSException, FileNotFoundException {
         super(initializeParent(builder));
         this.csvFile = builder.csvFile;
-        this.dataLength = builder.dataLength;
     }
 
     static M5Forecast.Builder initializeParent(GridDBBuilder builder) {
@@ -96,10 +104,6 @@ public class GridDBDataset extends M5Forecast {
         return new BufferedInputStream(csvUrl.openStream());
     }
 
-    public int getDataLength() {
-        return this.dataLength;
-    }
-
     public static GridStore connectToGridDB() throws GSException {
         Properties props = new Properties();
         props.setProperty("notificationMember", "172.18.0.2:10001");
@@ -109,7 +113,7 @@ public class GridDBDataset extends M5Forecast {
         return GridStoreFactory.getInstance().getGridStore(props);
     }
 
-    public static GridDBBuilder gridDBBuilder() {
+    public static GridDBBuilder gridDBBuilder() throws Exception {
         GridDBBuilder builder = null;
         try {
             builder = new GridDBBuilder();
@@ -131,10 +135,10 @@ public class GridDBDataset extends M5Forecast {
         private int size;
         private LocalDateTime startTime;
         private int maxWeek;
-        private String containerName;
 
-        GridDBBuilder() throws GSException {
+        GridDBBuilder() throws GSException, Exception {
             store = connectToGridDB();
+            seedDatabase();
         }
 
         protected GridDBBuilder self() {
@@ -178,12 +182,7 @@ public class GridDBDataset extends M5Forecast {
         }
 
         public String getContainerName() {
-            return containerName;
-        }
-
-        public GridDBBuilder setContainerName(String containerName) {
-            this.containerName = containerName;
-            return this;
+            return usage == Dataset.Usage.TRAIN ? TRAINING_COLLECTION_NAME : VALIDATION_COLLECTION_NAME;
         }
 
         public int getMaxWeek() {
@@ -223,15 +222,72 @@ public class GridDBDataset extends M5Forecast {
             return size;
         }
 
+        /*
+    We assume the database is already containing the timeseries data
+         */
+        private static void seedDatabase() throws Exception {
+            URL trainingData = Forecaster.class.getClassLoader().getResource("data/weekly_sales_train_evaluation.csv");
+            URL validationData = Forecaster.class.getClassLoader().getResource("data/weekly_sales_train_validation.csv");
+            String[] nextRecord;
+            try ( GridStore store = GridDBDataset.connectToGridDB();  CSVReader csvReader = new CSVReader(new InputStreamReader(trainingData.openStream(), StandardCharsets.UTF_8));  CSVReader csvValidationReader = new CSVReader(new InputStreamReader(validationData.openStream(), StandardCharsets.UTF_8))) {
+                store.dropContainer(TRAINING_COLLECTION_NAME);
+                store.dropContainer(VALIDATION_COLLECTION_NAME);
+
+                List<ColumnInfo> columnInfoList = new ArrayList<>();
+
+                nextRecord = csvReader.readNext();
+                for (int i = 0; i < nextRecord.length; i++) {
+                    ColumnInfo columnInfo = new ColumnInfo(nextRecord[i], GSType.STRING);
+                    columnInfoList.add(columnInfo);
+                }
+
+                ContainerInfo containerInfo = new ContainerInfo();
+                containerInfo.setColumnInfoList(columnInfoList);
+                containerInfo.setName(TRAINING_COLLECTION_NAME);
+                containerInfo.setType(ContainerType.COLLECTION);
+
+                Container<String, Row> container = store.putContainer(TRAINING_COLLECTION_NAME, containerInfo, false);
+
+                while ((nextRecord = csvReader.readNext()) != null) {
+                    Row row = container.createRow();
+                    for (int i = 0; i < nextRecord.length; i++) {
+                        row.setString(i, nextRecord[i]);
+                    }
+                    container.put(row);
+                }
+
+                nextRecord = csvValidationReader.readNext();
+                columnInfoList.clear();
+                for (int i = 0; i < nextRecord.length; i++) {
+                    ColumnInfo columnInfo = new ColumnInfo(nextRecord[i], GSType.STRING);
+                    columnInfoList.add(columnInfo);
+                }
+
+                containerInfo = new ContainerInfo();
+                containerInfo.setName(VALIDATION_COLLECTION_NAME);
+                containerInfo.setColumnInfoList(columnInfoList);
+                containerInfo.setType(ContainerType.COLLECTION);
+
+                container = store.putContainer(VALIDATION_COLLECTION_NAME, containerInfo, false);
+                while ((nextRecord = csvValidationReader.readNext()) != null) {
+                    Row row = container.createRow();
+                    for (int i = 0; i < nextRecord.length; i++) {
+                        String cell = nextRecord[i];
+                        row.setString(i, cell);
+                    }
+                    container.put(row);
+                }
+            }
+        }
+
         private File fetchDBDataAndSaveCSV(GridStore store) throws GSException, FileNotFoundException, NoSuchFieldException, IllegalArgumentException, IllegalAccessException {
-            File csvOutputFile = new File(this.containerName+".csv");
+            File csvOutputFile = new File(this.getContainerName()+ ".csv");
             try ( GridStore store2 = store) {
-                Container container = store2.getContainer(this.containerName);
+                Container container = store2.getContainer(this.getContainerName());
 
                 Query query = container.query("Select *");
                 RowSet<Row> rowSet = query.fetch();
 
-                dataLength = rowSet.size();
                 int columnCount = rowSet.getSchema().getColumnCount();
 
                 List<String> csv = new LinkedList<>();

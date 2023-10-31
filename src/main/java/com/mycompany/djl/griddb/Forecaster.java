@@ -2,15 +2,17 @@ package com.mycompany.djl.griddb;
 
 import ai.djl.Model;
 import ai.djl.ModelException;
-import ai.djl.basicdataset.BasicDatasets;
-import ai.djl.basicdataset.tabular.utils.Feature;
+import ai.djl.inference.Predictor;
 import ai.djl.metric.Metrics;
+import ai.djl.ndarray.NDArray;
+import ai.djl.ndarray.NDList;
 import ai.djl.ndarray.NDManager;
 import ai.djl.ndarray.types.Shape;
 import ai.djl.nn.Parameter;
+import ai.djl.timeseries.Forecast;
+import ai.djl.timeseries.TimeSeriesData;
 import ai.djl.timeseries.dataset.FieldName;
 import ai.djl.timeseries.dataset.M5Forecast;
-import ai.djl.timeseries.dataset.TimeFeaturizers;
 import ai.djl.timeseries.distribution.DistributionLoss;
 import ai.djl.timeseries.distribution.output.DistributionOutput;
 import ai.djl.timeseries.distribution.output.NegativeBinomialOutput;
@@ -18,34 +20,29 @@ import ai.djl.timeseries.evaluator.Rmsse;
 import ai.djl.timeseries.model.deepar.DeepARNetwork;
 import ai.djl.timeseries.timefeature.TimeFeature;
 import ai.djl.timeseries.transform.TimeSeriesTransform;
+import ai.djl.timeseries.translator.DeepARTranslator;
 import ai.djl.training.DefaultTrainingConfig;
 import ai.djl.training.EasyTrain;
 import ai.djl.training.Trainer;
 import ai.djl.training.TrainingResult;
+import ai.djl.training.dataset.Batch;
 import ai.djl.training.dataset.Dataset;
 import ai.djl.training.initializer.XavierInitializer;
 import ai.djl.training.listener.SaveModelTrainingListener;
 import ai.djl.training.listener.TrainingListener;
 import ai.djl.training.util.ProgressBar;
 import ai.djl.translate.TranslateException;
+import ai.djl.util.Progress;
 import com.mycompany.djl.griddb.datasets.GridDBDataset;
-import com.opencsv.CSVReader;
-import com.toshiba.mwcloud.gs.ColumnInfo;
-import com.toshiba.mwcloud.gs.Container;
-import com.toshiba.mwcloud.gs.ContainerInfo;
-import com.toshiba.mwcloud.gs.ContainerType;
 import com.toshiba.mwcloud.gs.GSException;
-import com.toshiba.mwcloud.gs.GSType;
-import com.toshiba.mwcloud.gs.GridStore;
-import com.toshiba.mwcloud.gs.Row;
 import java.io.FileNotFoundException;
 import java.io.IOException;
-import java.io.InputStreamReader;
-import java.net.URL;
-import java.nio.charset.StandardCharsets;
+import java.nio.file.Paths;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Logger;
 
 /**
@@ -58,20 +55,77 @@ public class Forecaster {
     final static int PREDICTION_LENGTH = 4;
     final static LocalDateTime START_TIME = LocalDateTime.parse("2011-01-29T00:00");
     final static String MODEL_OUTPUT_DIR = "outputs";
-    final static String TRAINING_COLLECTION_NAME = "NNTraining";
-    final static String VALIDATION_COLLECTION_NAME = "NNValidation";
 
     public static void main(String[] args) throws Exception {
-        Logger.getAnonymousLogger().info("Starting...");
-        //GridDBDataset.connectToGridDB();
-        //seedDatabase();
-        GridDBDataset.connectToGridDB();
-        seedDatabase();
+        Logger.getAnonymousLogger().info("Starting...");        
         startTraining();
+        final Map<String, Float> result = predict();
+        for (Map.Entry<String, Float> entry : result.entrySet()) {
+            Logger.getAnonymousLogger().info(String.format("metric: %s:\t%.2f", entry.getKey(), entry.getValue()));
+        }
     }
 
-    public static void predict(String outputDir)
+    public static Map<String, Float> predict()
             throws IOException, TranslateException, ModelException, Exception {
+        try ( Model model = Model.newInstance("deepar")) {
+            DeepARNetwork predictionNetwork = getDeepARModel(new NegativeBinomialOutput(), false);
+            model.setBlock(predictionNetwork);
+            model.load(Paths.get(MODEL_OUTPUT_DIR));
+
+            M5Forecast testSet
+                    = getDataset(
+                            new ArrayList<>(),
+                            predictionNetwork.getContextLength(),
+                            Dataset.Usage.TEST);
+
+            Map<String, Object> arguments = new ConcurrentHashMap<>();
+            arguments.put("prediction_length", PREDICTION_LENGTH);
+            arguments.put("freq", FREQ);
+            arguments.put("use_" + FieldName.FEAT_DYNAMIC_REAL.name().toLowerCase(), false);
+            arguments.put("use_" + FieldName.FEAT_STATIC_CAT.name().toLowerCase(), true);
+            arguments.put("use_" + FieldName.FEAT_STATIC_REAL.name().toLowerCase(), false);
+            DeepARTranslator translator = DeepARTranslator.builder(arguments).build();
+
+            M5ForecastingEvaluator evaluator
+                    = new M5ForecastingEvaluator(0.5f, 0.67f, 0.95f, 0.99f);
+            Progress progress = new ProgressBar();
+            progress.reset("Inferring", testSet.size());
+            try ( Predictor<TimeSeriesData, Forecast> predictor = model.newPredictor(translator)) {
+                for (Batch batch : testSet.getData(model.getNDManager().newSubManager())) {
+                    NDList data = batch.getData();
+                    NDArray target = data.head();
+                    NDArray featStaticCat = data.get(1);
+
+                    NDArray gt = target.get(":, {}:", -PREDICTION_LENGTH);
+                    NDArray pastTarget = target.get(":, :{}", -PREDICTION_LENGTH);
+
+                    NDList gtSplit = gt.split(batch.getSize());
+                    NDList pastTargetSplit = pastTarget.split(batch.getSize());
+                    NDList featStaticCatSplit = featStaticCat.split(batch.getSize());
+
+                    List<TimeSeriesData> batchInput = new ArrayList<>(batch.getSize());
+                    for (int i = 0; i < batch.getSize(); i++) {
+                        TimeSeriesData input = new TimeSeriesData(10);
+                        input.setStartTime(START_TIME);
+                        input.setField(FieldName.TARGET, pastTargetSplit.get(i).squeeze(0));
+                        input.setField(
+                                FieldName.FEAT_STATIC_CAT, featStaticCatSplit.get(i).squeeze(0));
+                        batchInput.add(input);
+                    }
+                    List<Forecast> forecasts = predictor.batchPredict(batchInput);
+                    for (int i = 0; i < forecasts.size(); i++) {
+                        evaluator.aggregateMetrics(
+                                evaluator.getMetricsPerTs(
+                                        gtSplit.get(i).squeeze(0),
+                                        pastTargetSplit.get(i).squeeze(0),
+                                        forecasts.get(i)));
+                    }
+                    progress.increment(batch.getSize());
+                    batch.close();
+                }
+                return evaluator.computeTotalMetrics();
+            }
+        }
     }
 
     private static void startTraining() throws IOException, TranslateException, Exception {
@@ -90,7 +144,7 @@ public class Forecaster {
             int contextLength = trainingNetwork.getContextLength();
 
             M5Forecast trainSet
-                    = getDatasetFomrRepository(trainingTransformation, contextLength, Dataset.Usage.TRAIN);
+                    = getDataset(trainingTransformation, contextLength, Dataset.Usage.TRAIN);
 
             try ( Trainer trainer = model.newTrainer(config)) {
                 trainer.setMetrics(new Metrics());
@@ -164,12 +218,11 @@ public class Forecaster {
 
     private static M5Forecast getDataset(
             List<TimeSeriesTransform> transformation, int contextLength, Dataset.Usage usage)
-            throws IOException, GSException, FileNotFoundException, NoSuchFieldException, IllegalArgumentException, IllegalAccessException {
+            throws IOException, GSException, FileNotFoundException, NoSuchFieldException, IllegalArgumentException, IllegalAccessException, Exception {
         // In order to create a TimeSeriesDataset, you must specify the transformation of the data
         // preprocessing
         GridDBDataset.GridDBBuilder builder
                 = GridDBDataset.gridDBBuilder()
-                        .setContainerName(usage == Dataset.Usage.TRAIN?  TRAINING_COLLECTION_NAME: VALIDATION_COLLECTION_NAME )
                         .optUsage(usage)
                         .setTransformation(transformation)
                         .setContextLength(contextLength)
@@ -183,101 +236,5 @@ public class Forecaster {
 
         m5Forecast.prepare(new ProgressBar());
         return m5Forecast;
-    }
-    
-    private static M5Forecast getDatasetFomrRepository(
-            List<TimeSeriesTransform> transformation, int contextLength, Dataset.Usage usage)
-            throws IOException {
-        // In order to create a TimeSeriesDataset, you must specify the transformation of the data
-        // preprocessing
-        M5Forecast.Builder builder =
-                M5Forecast.builder()
-                        .optUsage(usage)
-                        .optRepository(BasicDatasets.REPOSITORY)
-                        .optGroupId(BasicDatasets.GROUP_ID)
-                        .optArtifactId("m5forecast-unittest")
-                        .setTransformation(transformation)
-                        .setContextLength(contextLength)
-                        .setSampling(32, usage == Dataset.Usage.TRAIN);
-
-        int maxWeek = usage == Dataset.Usage.TRAIN ? 273 : 277;
-        for (int i = 1; i <= maxWeek; i++) {
-            builder.addFeature("w_" + i, FieldName.TARGET);
-        }
-
-        M5Forecast m5Forecast =
-                builder.addFeature("state_id", FieldName.FEAT_STATIC_CAT)
-                        .addFeature("store_id", FieldName.FEAT_STATIC_CAT)
-                        .addFeature("cat_id", FieldName.FEAT_STATIC_CAT)
-                        .addFeature("dept_id", FieldName.FEAT_STATIC_CAT)
-                        .addFeature("item_id", FieldName.FEAT_STATIC_CAT)
-                        .addFieldFeature(
-                                FieldName.START,
-                                new Feature(
-                                        "date",
-                                        TimeFeaturizers.getConstantTimeFeaturizer(START_TIME)))
-                        .build();
-        m5Forecast.prepare(new ProgressBar());
-        return m5Forecast;
-    }
-    
-   
-    /*
-    We assume the database is already containing the timeseries data
-     */
-    private static void seedDatabase() throws Exception {
-        URL trainingData = Forecaster.class.getClassLoader().getResource("data/weekly_sales_train_evaluation.csv");
-        URL validationData = Forecaster.class.getClassLoader().getResource("data/weekly_sales_train_validation.csv");
-        String[] nextRecord;
-        try ( GridStore store = GridDBDataset.connectToGridDB();  CSVReader csvReader = new CSVReader(new InputStreamReader(trainingData.openStream(), StandardCharsets.UTF_8));  CSVReader csvValidationReader = new CSVReader(new InputStreamReader(validationData.openStream(), StandardCharsets.UTF_8))) {
-            store.dropContainer(TRAINING_COLLECTION_NAME);
-            store.dropContainer(VALIDATION_COLLECTION_NAME);
-            
-            List<ColumnInfo> columnInfoList = new ArrayList<>();
-
-            nextRecord = csvReader.readNext();
-            for (int i = 0; i < nextRecord.length; i++) {
-                ColumnInfo columnInfo = new ColumnInfo(nextRecord[i], GSType.STRING);
-                columnInfoList.add(columnInfo);
-            }
-
-            ContainerInfo containerInfo = new ContainerInfo();
-            containerInfo.setColumnInfoList(columnInfoList);
-            containerInfo.setName(TRAINING_COLLECTION_NAME);
-            containerInfo.setType(ContainerType.COLLECTION);
-            
-            Container<String, Row> container = store.putContainer(TRAINING_COLLECTION_NAME, containerInfo, false);
-            
-            while ((nextRecord = csvReader.readNext()) != null) {
-                Row row = container.createRow();
-                for (int i = 0; i < nextRecord.length; i++) {
-                    row.setString(i, nextRecord[i]);
-                }
-                container.put(row);
-            }            
-
-            nextRecord = csvValidationReader.readNext();
-            columnInfoList.clear();
-            for (int i = 0; i < nextRecord.length; i++) {
-                ColumnInfo columnInfo = new ColumnInfo(nextRecord[i], GSType.STRING);
-                columnInfoList.add(columnInfo);
-            }
-
-            containerInfo = new ContainerInfo();
-            containerInfo.setName(VALIDATION_COLLECTION_NAME);
-            containerInfo.setColumnInfoList(columnInfoList);
-            containerInfo.setType(ContainerType.COLLECTION);
-
-            container = store.putContainer(VALIDATION_COLLECTION_NAME, containerInfo, false);
-            while ((nextRecord = csvValidationReader.readNext()) != null) {
-                Row row = container.createRow();
-                for (int i = 0; i < nextRecord.length; i++) {
-                    String cell = nextRecord[i];
-                    row.setString(i, cell);
-                }
-                container.put(row);
-            }
-        }
-    }
-
+    }   
 }

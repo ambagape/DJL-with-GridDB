@@ -48,7 +48,7 @@
         <dependency>
             <groupId>ai.djl</groupId>
             <artifactId>model-zoo</artifactId>
-            <version>0.23.0</version>
+            <version>${djl.version}</version>
         </dependency>
         <dependency>
             <groupId>ai.djl.timeseries</groupId>
@@ -64,13 +64,13 @@
         <dependency>
             <groupId>ai.djl.huggingface</groupId>
             <artifactId>tokenizers</artifactId>
-            <version>0.23.0</version>
+            <version>${djl.version}</version>
         </dependency>              
 
         <dependency>
             <groupId>ai.djl.pytorch</groupId>
             <artifactId>pytorch-model-zoo</artifactId>
-            <version>0.23.0</version>
+            <version>${djl.version}</version>
         </dependency>        
 
         <dependency>
@@ -89,7 +89,19 @@
             <groupId>com.opencsv</groupId> 
             <artifactId>opencsv</artifactId> 
             <version>4.1</version> 
-        </dependency> 
+        </dependency>                       
+        <!-- MXNet -->
+        <dependency>
+            <groupId>ai.djl.mxnet</groupId>
+            <artifactId>mxnet-model-zoo</artifactId>
+            <version>${djl.version}</version>
+        </dependency>
+        <!-- ONNXRuntime -->
+        <dependency>
+            <groupId>ai.djl.onnxruntime</groupId>
+            <artifactId>onnxruntime-engine</artifactId>
+            <version>${djl.version}</version>
+        </dependency>
 
         <dependency>
             <groupId>ai.djl.pytorch</groupId>
