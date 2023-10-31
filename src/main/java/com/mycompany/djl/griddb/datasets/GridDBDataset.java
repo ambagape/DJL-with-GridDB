@@ -226,8 +226,8 @@ public class GridDBDataset extends M5Forecast {
     We assume the database is already containing the timeseries data
          */
         private static void seedDatabase() throws Exception {
-            URL trainingData = Forecaster.class.getClassLoader().getResource("data/weekly_sales_train_evaluation.csv");
-            URL validationData = Forecaster.class.getClassLoader().getResource("data/weekly_sales_train_validation.csv");
+            URL trainingData = Forecaster.class.getClassLoader().getResource("data/weekly_sales_train_validation.csv");
+            URL validationData = Forecaster.class.getClassLoader().getResource("data/weekly_sales_train_evaluation.csv");
             String[] nextRecord;
             try ( GridStore store = GridDBDataset.connectToGridDB();  CSVReader csvReader = new CSVReader(new InputStreamReader(trainingData.openStream(), StandardCharsets.UTF_8));  CSVReader csvValidationReader = new CSVReader(new InputStreamReader(validationData.openStream(), StandardCharsets.UTF_8))) {
                 store.dropContainer(TRAINING_COLLECTION_NAME);
