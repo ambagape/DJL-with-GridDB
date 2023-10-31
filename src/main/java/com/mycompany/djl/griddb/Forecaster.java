@@ -2,11 +2,15 @@ package com.mycompany.djl.griddb;
 
 import ai.djl.Model;
 import ai.djl.ModelException;
+import ai.djl.basicdataset.BasicDatasets;
+import ai.djl.basicdataset.tabular.utils.Feature;
 import ai.djl.metric.Metrics;
 import ai.djl.ndarray.NDManager;
 import ai.djl.ndarray.types.Shape;
 import ai.djl.nn.Parameter;
+import ai.djl.timeseries.dataset.FieldName;
 import ai.djl.timeseries.dataset.M5Forecast;
+import ai.djl.timeseries.dataset.TimeFeaturizers;
 import ai.djl.timeseries.distribution.DistributionLoss;
 import ai.djl.timeseries.distribution.output.DistributionOutput;
 import ai.djl.timeseries.distribution.output.NegativeBinomialOutput;
@@ -75,6 +79,7 @@ public class Forecaster {
         try ( Model model = Model.newInstance("deepar")) {
             // specify the model distribution output, for M5 case, NegativeBinomial best describe it
             DistributionOutput distributionOutput = new NegativeBinomialOutput();
+            DefaultTrainingConfig config = setupTrainingConfig(distributionOutput);
 
             NDManager manager = model.getNDManager();
             DeepARNetwork trainingNetwork = getDeepARModel(distributionOutput, true);
@@ -85,9 +90,7 @@ public class Forecaster {
             int contextLength = trainingNetwork.getContextLength();
 
             M5Forecast trainSet
-                    = getDataset(trainingTransformation, contextLength, Dataset.Usage.TRAIN);
-
-            DefaultTrainingConfig config = setupTrainingConfig(distributionOutput);
+                    = getDatasetFomrRepository(trainingTransformation, contextLength, Dataset.Usage.TRAIN);
 
             try ( Trainer trainer = model.newTrainer(config)) {
                 trainer.setMetrics(new Metrics());
@@ -181,7 +184,44 @@ public class Forecaster {
         m5Forecast.prepare(new ProgressBar());
         return m5Forecast;
     }
+    
+    private static M5Forecast getDatasetFomrRepository(
+            List<TimeSeriesTransform> transformation, int contextLength, Dataset.Usage usage)
+            throws IOException {
+        // In order to create a TimeSeriesDataset, you must specify the transformation of the data
+        // preprocessing
+        M5Forecast.Builder builder =
+                M5Forecast.builder()
+                        .optUsage(usage)
+                        .optRepository(BasicDatasets.REPOSITORY)
+                        .optGroupId(BasicDatasets.GROUP_ID)
+                        .optArtifactId("m5forecast-unittest")
+                        .setTransformation(transformation)
+                        .setContextLength(contextLength)
+                        .setSampling(32, usage == Dataset.Usage.TRAIN);
 
+        int maxWeek = usage == Dataset.Usage.TRAIN ? 273 : 277;
+        for (int i = 1; i <= maxWeek; i++) {
+            builder.addFeature("w_" + i, FieldName.TARGET);
+        }
+
+        M5Forecast m5Forecast =
+                builder.addFeature("state_id", FieldName.FEAT_STATIC_CAT)
+                        .addFeature("store_id", FieldName.FEAT_STATIC_CAT)
+                        .addFeature("cat_id", FieldName.FEAT_STATIC_CAT)
+                        .addFeature("dept_id", FieldName.FEAT_STATIC_CAT)
+                        .addFeature("item_id", FieldName.FEAT_STATIC_CAT)
+                        .addFieldFeature(
+                                FieldName.START,
+                                new Feature(
+                                        "date",
+                                        TimeFeaturizers.getConstantTimeFeaturizer(START_TIME)))
+                        .build();
+        m5Forecast.prepare(new ProgressBar());
+        return m5Forecast;
+    }
+    
+   
     /*
     We assume the database is already containing the timeseries data
      */

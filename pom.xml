@@ -8,7 +8,8 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <maven.compiler.source>8</maven.compiler.source>
         <maven.compiler.target>8</maven.compiler.target>
-        <exec.mainClass>com.mycompany.djl.griddb.DjlGriddb</exec.mainClass>
+        <exec.mainClass>com.mycompany.djl.griddb.Forecaster</exec.mainClass>   
+        <djl.version>0.24.0</djl.version>
     </properties>
     <repositories>
         <repository>
@@ -41,8 +42,9 @@
         <dependency>
             <groupId>ai.djl</groupId>
             <artifactId>api</artifactId>
-            <version>0.23.0</version>
+            <version>${djl.version}</version>
         </dependency>        
+      
         <dependency>
             <groupId>ai.djl</groupId>
             <artifactId>model-zoo</artifactId>
@@ -51,73 +53,58 @@
         <dependency>
             <groupId>ai.djl.timeseries</groupId>
             <artifactId>timeseries</artifactId>
-            <version>0.23.0</version>
+            <version>${djl.version}</version>
             <classifier>sources</classifier>
         </dependency>
-         <dependency>
+        <dependency>
             <groupId>ai.djl.timeseries</groupId>
             <artifactId>timeseries</artifactId>
-            <version>0.23.0</version>
-        </dependency>
+            <version>${djl.version}</version>
+        </dependency> 
         <dependency>
             <groupId>ai.djl.huggingface</groupId>
             <artifactId>tokenizers</artifactId>
             <version>0.23.0</version>
-        </dependency>      
-        
-        <dependency>
-            <groupId>ai.djl.mxnet</groupId>
-            <artifactId>mxnet-model-zoo</artifactId>
-            <version>0.23.0</version>
-        </dependency>
-        
+        </dependency>              
+
         <dependency>
             <groupId>ai.djl.pytorch</groupId>
             <artifactId>pytorch-model-zoo</artifactId>
             <version>0.23.0</version>
-        </dependency>
-        
-        <dependency>
-            <groupId>ai.djl.tensorflow</groupId>
-            <artifactId>tensorflow-model-zoo</artifactId>
-            <version>0.23.0</version>
-        </dependency>
+        </dependency>        
 
         <dependency>
             <groupId>ai.djl</groupId>
             <artifactId>examples</artifactId>
             <version>0.6.0</version>
         </dependency>
-         <dependency>
+        <dependency>
             <groupId>ai.djl</groupId>
             <artifactId>examples</artifactId>
             <version>0.6.0</version>
             <classifier>sources</classifier>
-        </dependency>
-        <dependency>
-            <groupId>com.mysql</groupId>
-            <artifactId>mysql-connector-j</artifactId>
-            <version>8.1.0</version>
-        </dependency>
-        <dependency>
-            <groupId>ai.djl.mxnet</groupId>
-            <artifactId>mxnet-engine</artifactId>
-            <version>0.23.0</version>
-            <scope>runtime</scope>
-        </dependency>
-        <dependency>
-            <groupId>ai.djl.mxnet</groupId>
-            <artifactId>mxnet-native-mkl</artifactId>
-            <classifier>win-x86_64</classifier>
-            <scope>runtime</scope>
-            <version>1.9.1</version>
-        </dependency>
-         <dependency> 
+        </dependency>       
+      
+        <dependency> 
             <groupId>com.opencsv</groupId> 
             <artifactId>opencsv</artifactId> 
             <version>4.1</version> 
         </dependency> 
 
+        <dependency>
+            <groupId>ai.djl.pytorch</groupId>
+            <artifactId>pytorch-native-cpu-precxx11</artifactId>
+            <classifier>linux-x86_64</classifier>
+            <version>2.0.1</version>
+            <scope>runtime</scope>
+        </dependency>
+        
+        <dependency>
+            <groupId>ai.djl.pytorch</groupId>
+            <artifactId>pytorch-jni</artifactId>
+            <version>2.0.1-0.23.0</version>
+            <scope>runtime</scope>
+        </dependency>
     </dependencies>
     <build>
         <plugins>          

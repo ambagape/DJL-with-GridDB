@@ -102,7 +102,7 @@ public class GridDBDataset extends M5Forecast {
 
     public static GridStore connectToGridDB() throws GSException {
         Properties props = new Properties();
-        props.setProperty("notificationMember", "172.18.0.3:10001");
+        props.setProperty("notificationMember", "172.18.0.2:10001");
         props.setProperty("clusterName", "defaultCluster");
         props.setProperty("user", "admin");
         props.setProperty("password", "admin");
