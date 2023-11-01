@@ -17,3 +17,6 @@ buildNumber.properties
 .classpath
 .vscode
 NNTraining.csv
+NNValidation.csv
+nb-configuration.xml
+nbactions.xml

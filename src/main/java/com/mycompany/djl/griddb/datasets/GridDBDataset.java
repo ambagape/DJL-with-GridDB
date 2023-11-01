@@ -50,7 +50,6 @@ public class GridDBDataset extends M5Forecast {
     final static String VALIDATION_COLLECTION_NAME = "NNValidation";
 
     private final File csvFile;
-    static private M5Forecast.Builder forecastBuilder;
 
     protected GridDBDataset(GridDBBuilder builder) throws GSException, FileNotFoundException {
         super(initializeParent(builder));
@@ -80,7 +79,6 @@ public class GridDBDataset extends M5Forecast {
                                 "date",
                                 TimeFeaturizers.getConstantTimeFeaturizer(builder.getStartTime())));
 
-        GridDBDataset.forecastBuilder = newBuilder;
         return newBuilder;
     }
 
